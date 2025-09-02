@@ -5,6 +5,7 @@ import asyncio
 import streamlit as st
 from typing import Dict, List, Optional, Any
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -14,10 +15,21 @@ class APIClient:
     
     def __init__(
         self,
-        agent_base_url: str = "http://localhost:9996",
-        computer_base_url: str = "http://localhost:9995",
+        agent_base_url: str = None,
+        computer_base_url: str = None,
         timeout: float = 30.0
     ):
+        # Use environment variables if URLs not provided
+        if agent_base_url is None:
+            agent_host = os.getenv("AI_AGENT_HOST", "localhost")
+            agent_port = os.getenv("AI_AGENT_PORT", "9996")
+            agent_base_url = f"http://{agent_host}:{agent_port}"
+        
+        if computer_base_url is None:
+            computer_host = os.getenv("COMPUTER_CONTROL_HOST", "localhost")
+            computer_port = os.getenv("COMPUTER_CONTROL_PORT", "9995")
+            computer_base_url = f"http://{computer_host}:{computer_port}"
+        
         self.agent_base_url = agent_base_url.rstrip("/")
         self.computer_base_url = computer_base_url.rstrip("/")
         self.timeout = timeout
