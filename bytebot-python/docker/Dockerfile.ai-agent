@@ -26,12 +26,11 @@ COPY packages/ai_agent ./packages/ai_agent
 COPY alembic ./alembic
 COPY alembic.ini ./
 
-# Install dependencies
-RUN cd packages/shared && poetry install --only=main --no-interaction
-RUN cd packages/ai_agent && poetry install --only=main --no-interaction
-# Install packages in system Python for easier access
-RUN cd packages/shared && poetry run pip install -e .
-RUN cd packages/ai_agent && poetry run pip install -e .
+# Install dependencies directly with pip instead of Poetry
+RUN cd packages/shared && pip install -e .
+RUN cd packages/ai_agent && pip install -e .
+# Also install key dependencies directly
+RUN pip install fastapi uvicorn pydantic sqlalchemy alembic psycopg2-binary
 RUN rm -rf $POETRY_CACHE_DIR
 
 # Expose port
