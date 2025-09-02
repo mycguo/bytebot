@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y \
     libcairo-gobject2 \
     libgtk-3-0 \
     libgdk-pixbuf-2.0-0 \
+    gnome-screenshot \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -42,7 +43,7 @@ COPY packages/computer_control ./packages/computer_control
 RUN cd packages/shared && pip install -e .
 RUN cd packages/computer_control && pip install -e .
 # Also install key dependencies directly
-RUN pip install fastapi uvicorn pydantic sqlalchemy
+RUN pip install fastapi uvicorn pydantic sqlalchemy "Pillow>=9.2.0" pyautogui
 RUN rm -rf $POETRY_CACHE_DIR
 
 # Set display environment for virtual display

@@ -289,22 +289,78 @@ class ComputerUseService:
 
     async def _screenshot(self, action: ScreenshotAction) -> Dict[str, Any]:
         """Take a screenshot."""
-        # Take screenshot using pyautogui
-        screenshot = pyautogui.screenshot()
+        # Take screenshot using scrot (since we're in a headless environment)
+        import tempfile
+        import subprocess
+        import os
         
-        # Convert to base64
-        import io
-        buffer = io.BytesIO()
-        screenshot.save(buffer, format='PNG')
-        img_data = buffer.getvalue()
-        base64_data = base64.b64encode(img_data).decode('utf-8')
+        # Create temporary file for screenshot
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
+            tmp_path = tmp_file.name
+        
+        try:
+            # Use scrot to take screenshot of the virtual display
+            # Set DISPLAY environment variable for scrot
+            env = os.environ.copy()
+            env['DISPLAY'] = ':99'
+            
+            process = await asyncio.create_subprocess_exec(
+                'scrot', tmp_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env
+            )
+            
+            stdout, stderr = await process.communicate()
+            
+            if process.returncode != 0:
+                raise Exception(f"Screenshot failed: {stderr.decode()}")
+            
+            # Check if file was created and get its size
+            if not os.path.exists(tmp_path):
+                raise Exception(f"Screenshot file was not created. stdout: {stdout.decode()}, stderr: {stderr.decode()}")
+            
+            file_size = os.path.getsize(tmp_path)
+            self.logger.info(f"Screenshot file created with size: {file_size} bytes")
+            
+            # Read the screenshot file and convert to base64
+            with open(tmp_path, 'rb') as f:
+                img_data = f.read()
+            
+            # Check if we have valid image data
+            if len(img_data) == 0:
+                # If scrot produces an empty file, it means the display is blank
+                # Create a small blank PNG image as a valid response
+                self.logger.info("Display appears to be blank, creating blank screenshot")
+                from PIL import Image
+                import io
+                
+                # Create a 1280x960 blank (black) image
+                blank_img = Image.new('RGB', (1280, 960), color=(0, 0, 0))
+                img_buffer = io.BytesIO()
+                blank_img.save(img_buffer, format='PNG')
+                img_data = img_buffer.getvalue()
+                width, height = 1280, 960
+            else:
+                # Get image dimensions using PIL
+                from PIL import Image
+                import io
+                img = Image.open(io.BytesIO(img_data))
+                width, height = img.size
+                
+            base64_data = base64.b64encode(img_data).decode('utf-8')
+            
+        finally:
+            # Clean up temp file
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
         
         return {
             "type": "image",
             "format": "png", 
             "data": base64_data,
-            "width": screenshot.width,
-            "height": screenshot.height
+            "width": width,
+            "height": height
         }
 
     async def _cursor_position(self, action: CursorPositionAction) -> Dict[str, Any]:

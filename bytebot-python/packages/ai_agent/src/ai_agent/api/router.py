@@ -176,6 +176,38 @@ async def abort_task(
         raise HTTPException(status_code=500, detail=f"Failed to abort task: {str(e)}")
 
 
+@router.get("/tasks/{task_id}/messages")
+async def get_task_messages(
+    task_id: UUID,
+    task_service: TaskService = Depends(get_task_service)
+):
+    """Get messages for a specific task."""
+    try:
+        task = await task_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        messages = await task_service.get_task_messages(task_id)
+        return {
+            "task_id": str(task_id),
+            "messages": [
+                {
+                    "id": str(msg.id),
+                    "role": msg.role.value,
+                    "content": msg.content,
+                    "created_at": msg.created_at.isoformat()
+                }
+                for msg in messages
+            ]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting messages for task {task_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get messages: {str(e)}")
+
+
 @router.get("/processor/status")
 async def get_processor_status(
     task_processor: TaskProcessor = Depends(get_task_processor)

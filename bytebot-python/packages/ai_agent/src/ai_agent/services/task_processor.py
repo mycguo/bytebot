@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from typing import Dict, Optional
 from uuid import UUID
 
@@ -21,6 +22,7 @@ from shared.types.message_content import (
 from .task_service import TaskService
 from ..models.constants import AGENT_SYSTEM_PROMPT
 from ..models.agent_types import AgentInterrupt
+from ..providers.anthropic import AnthropicService
 
 
 class TaskProcessor:
@@ -32,8 +34,16 @@ class TaskProcessor:
         self.is_processing = False
         self.abort_controllers: Dict[str, asyncio.Event] = {}
         
-        # Computer control service URL
-        self.computer_control_url = "http://localhost:9995"
+        # Computer control service URL - use environment variable
+        self.computer_control_url = os.getenv("COMPUTER_CONTROL_URL", "http://computer-control:9995")
+        
+        # Initialize AI provider
+        try:
+            self.ai_provider = AnthropicService()
+            self.logger.info("Anthropic AI provider initialized")
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize AI provider: {e}")
+            self.ai_provider = None
         
         self.logger.info("TaskProcessor initialized")
 
@@ -141,7 +151,24 @@ class TaskProcessor:
 
     async def _process_with_ai(self, task_service: TaskService, task, messages, abort_event: asyncio.Event):
         """Process task using AI agent."""
-        max_iterations = 50  # Prevent infinite loops
+        if not self.ai_provider:
+            # Fallback to placeholder response if AI provider not available
+            self.logger.warning("AI provider not available, using placeholder response")
+            response_content = [
+                TextContentBlock(
+                    type=MessageContentType.TEXT,
+                    text=f"AI provider not available. Task: {task.description}"
+                )
+            ]
+            
+            await task_service.add_message(
+                task_id=task.id,
+                content=[block.model_dump() for block in response_content],
+                role=Role.ASSISTANT
+            )
+            return
+        
+        max_iterations = 20  # Prevent infinite loops
         iteration = 0
         
         while iteration < max_iterations:
@@ -151,53 +178,84 @@ class TaskProcessor:
             iteration += 1
             self.logger.debug(f"Task {task.id} - Iteration {iteration}")
             
-            # For now, we'll implement a simple text-based response
-            # TODO: Integrate with actual AI providers
-            response_content = [
-                TextContentBlock(
-                    type=MessageContentType.TEXT,
-                    text=f"I'm processing your task: {task.description}. This is iteration {iteration}."
+            # Get model configuration from task
+            model_config = task.model if hasattr(task, 'model') and task.model else {
+                "name": "claude-3-5-sonnet-20241022"
+            }
+            
+            try:
+                # Call real AI provider
+                response = await self.ai_provider.generate_message(
+                    system_prompt=AGENT_SYSTEM_PROMPT,
+                    messages=messages,
+                    model=model_config.get("name", "claude-3-5-sonnet-20241022"),
+                    use_tools=True,
+                    signal=abort_event
                 )
-            ]
-            
-            # Add AI response message
-            await task_service.add_message(
-                task_id=task.id,
-                content=[block.model_dump() for block in response_content],
-                role=Role.ASSISTANT
-            )
-            
-            # Check for tool use in response
-            tool_results = []
-            has_computer_tools = False
-            
-            for block in response_content:
-                if isinstance(block, ToolUseContentBlock):
-                    if is_computer_tool_use_content_block(block):
-                        has_computer_tools = True
-                        # Execute computer tool
-                        result = await self._execute_computer_tool(block)
-                        tool_results.append(result)
-                    elif is_set_task_status_tool_use_block(block):
-                        # Handle task status change
-                        await self._handle_task_status_change(task_service, task.id, block)
-                        return  # Task is complete
-            
-            # If no computer tools were used, break (simple task completion)
-            if not has_computer_tools:
-                break
                 
-            # Add tool results if any
-            if tool_results:
-                for result in tool_results:
-                    await task_service.add_message(
-                        task_id=task.id,
-                        content=[result.model_dump()],
-                        role=Role.ASSISTANT
+                # Add AI response message
+                await task_service.add_message(
+                    task_id=task.id,
+                    content=[block.model_dump() for block in response.content_blocks],
+                    role=Role.ASSISTANT
+                )
+                
+                # Check for tool use in response
+                tool_results = []
+                has_computer_tools = False
+                task_completed = False
+                
+                for block in response.content_blocks:
+                    if isinstance(block, ToolUseContentBlock):
+                        if is_computer_tool_use_content_block(block):
+                            has_computer_tools = True
+                            # Execute computer tool
+                            result = await self._execute_computer_tool(block)
+                            tool_results.append(result)
+                        elif is_set_task_status_tool_use_block(block):
+                            # Handle task status change
+                            await self._handle_task_status_change(task_service, task.id, block)
+                            task_completed = True
+                            return  # Task is complete
+                
+                # If task was completed via tool, exit
+                if task_completed:
+                    return
+                    
+                # Add tool results if any
+                if tool_results:
+                    for result in tool_results:
+                        await task_service.add_message(
+                            task_id=task.id,
+                            content=[result.model_dump()],
+                            role=Role.ASSISTANT
+                        )
+                    
+                    # Refresh messages for next iteration
+                    messages = await task_service.get_task_messages(task.id)
+                else:
+                    # If no tools used and it's a text response, consider task complete
+                    self.logger.info(f"Task {task.id} completed with text response")
+                    break
+                
+                # Small delay between iterations
+                await asyncio.sleep(0.1)
+                
+            except Exception as e:
+                self.logger.error(f"Error in AI processing for task {task.id}: {e}")
+                # Add error message
+                error_response = [
+                    TextContentBlock(
+                        type=MessageContentType.TEXT,
+                        text=f"Error processing task: {str(e)}"
                     )
-            
-            # Small delay between iterations
-            await asyncio.sleep(0.1)
+                ]
+                await task_service.add_message(
+                    task_id=task.id,
+                    content=[block.model_dump() for block in error_response],
+                    role=Role.ASSISTANT
+                )
+                break
         
         if iteration >= max_iterations:
             self.logger.warning(f"Task {task.id} reached maximum iterations ({max_iterations})")
