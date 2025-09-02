@@ -1,0 +1,40 @@
+# Dockerfile for Web UI Service
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN pip install poetry==1.6.1
+
+# Configure Poetry
+ENV POETRY_NO_INTERACTION=1 \
+    POETRY_VENV_IN_PROJECT=1 \
+    POETRY_CACHE_DIR=/tmp/poetry_cache
+
+# Set working directory
+WORKDIR /app
+
+# Copy project files
+COPY pyproject.toml poetry.lock* ./
+COPY packages/shared ./packages/shared
+COPY packages/web_ui ./packages/web_ui
+
+# Install dependencies
+RUN cd packages/shared && poetry install --only=main
+RUN cd packages/web_ui && poetry install --only=main && rm -rf $POETRY_CACHE_DIR
+
+# Expose port
+EXPOSE 9992
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:9992/_stcore/health || exit 1
+
+# Start script
+COPY docker/scripts/start-web-ui.sh /start.sh
+RUN chmod +x /start.sh
+
+CMD ["/start.sh"]

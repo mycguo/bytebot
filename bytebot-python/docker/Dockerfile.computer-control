@@ -1,0 +1,59 @@
+# Dockerfile for Computer Control Service
+FROM python:3.11-slim
+
+# Install system dependencies for desktop automation
+RUN apt-get update && apt-get install -y \
+    python3-tk \
+    python3-dev \
+    scrot \
+    xvfb \
+    x11-utils \
+    xdotool \
+    build-essential \
+    libx11-dev \
+    libxtst6 \
+    libxrandr2 \
+    libasound2 \
+    libpangocairo-1.0-0 \
+    libatk1.0-0 \
+    libcairo-gobject2 \
+    libgtk-3-0 \
+    libgdk-pixbuf-2.0-0 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN pip install poetry==1.6.1
+
+# Configure Poetry
+ENV POETRY_NO_INTERACTION=1 \
+    POETRY_VENV_IN_PROJECT=1 \
+    POETRY_CACHE_DIR=/tmp/poetry_cache
+
+# Set working directory
+WORKDIR /app
+
+# Copy project files
+COPY pyproject.toml poetry.lock* ./
+COPY packages/shared ./packages/shared
+COPY packages/computer_control ./packages/computer_control
+
+# Install dependencies
+RUN cd packages/shared && poetry install --only=main
+RUN cd packages/computer_control && poetry install --only=main && rm -rf $POETRY_CACHE_DIR
+
+# Set display environment for virtual display
+ENV DISPLAY=:99
+
+# Expose port
+EXPOSE 9995
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:9995/health || exit 1
+
+# Start script
+COPY docker/scripts/start-computer-control.sh /start.sh
+RUN chmod +x /start.sh
+
+CMD ["/start.sh"]

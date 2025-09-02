@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "bytebot-shared"
+version = "0.1.0"
+description = "Shared types and utilities for Bytebot Python"
+authors = ["Bytebot Team <support@bytebot.ai>"]
+packages = [{include = "shared", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pydantic = "^2.5.0"
+sqlalchemy = "^2.0.0"
+enum34 = "^1.1.10"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

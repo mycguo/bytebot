@@ -1,0 +1,98 @@
+name: bytebot-python
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bytebot-python-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-bytebotdb}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - bytebot-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  computer-control:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.computer-control
+    container_name: bytebot-python-computer-control
+    restart: unless-stopped
+    ports:
+      - "9995:9995"
+    environment:
+      - DISPLAY=:99
+      - PORT=9995
+      - HOST=0.0.0.0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    networks:
+      - bytebot-network
+    privileged: true  # Required for desktop automation
+    shm_size: "2g"
+    depends_on:
+      - postgres
+
+  ai-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ai-agent
+    container_name: bytebot-python-ai-agent
+    restart: unless-stopped
+    ports:
+      - "9996:9996"
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/bytebotdb}
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${POSTGRES_USER:-postgres}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - PORT=9996
+      - HOST=0.0.0.0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - COMPUTER_CONTROL_URL=http://computer-control:9995
+    networks:
+      - bytebot-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      computer-control:
+        condition: service_started
+
+  web-ui:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web-ui
+    container_name: bytebot-python-web-ui
+    restart: unless-stopped
+    ports:
+      - "9992:9992"
+    environment:
+      - STREAMLIT_PORT=9992
+      - AI_AGENT_HOST=ai-agent
+      - AI_AGENT_PORT=9996
+      - COMPUTER_CONTROL_HOST=computer-control
+      - COMPUTER_CONTROL_PORT=9995
+    networks:
+      - bytebot-network
+    depends_on:
+      - ai-agent
+      - computer-control
+
+networks:
+  bytebot-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local

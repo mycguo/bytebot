@@ -1,0 +1,31 @@
+# Base Dockerfile for shared dependencies
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN pip install poetry==1.6.1
+
+# Configure Poetry
+ENV POETRY_NO_INTERACTION=1 \
+    POETRY_VENV_IN_PROJECT=1 \
+    POETRY_CACHE_DIR=/tmp/poetry_cache
+
+# Set working directory
+WORKDIR /app
+
+# Copy poetry files
+COPY pyproject.toml poetry.lock* ./
+
+# Install dependencies
+RUN poetry install --only=main && rm -rf $POETRY_CACHE_DIR
+
+# Copy shared package
+COPY packages/shared ./packages/shared
+
+# Install shared package
+RUN cd packages/shared && poetry install

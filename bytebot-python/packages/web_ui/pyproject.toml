@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "bytebot-web-ui"
+version = "0.1.0"
+description = "Web UI service for Bytebot Python using Streamlit"
+authors = ["Bytebot Team <support@bytebot.ai>"]
+packages = [{include = "web_ui", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+streamlit = "^1.28.0"
+streamlit-autorefresh = "^1.0.1"
+streamlit-ace = "^0.1.1"
+httpx = "^0.25.0"
+pandas = "^2.1.0"
+pillow = "^10.1.0"
+plotly = "^5.17.0"
+pydantic = "^2.5.0"
+# Shared package
+bytebot-shared = {path = "../shared", develop = true}
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-asyncio = "^0.21.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
