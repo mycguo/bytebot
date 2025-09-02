@@ -97,6 +97,9 @@ class AnthropicService(BaseAIProvider):
                     if isinstance(block, dict) and block.get("type") == "text":
                         content_text += block.get("text", "")
             
+            # Strip whitespace to avoid Anthropic API errors
+            content_text = content_text.strip()
+            
             if content_text:
                 anthropic_messages.append({
                     "role": role,

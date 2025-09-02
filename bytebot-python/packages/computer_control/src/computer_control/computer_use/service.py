@@ -377,9 +377,10 @@ class ComputerUseService:
         
         # Application launching logic (simplified)
         app_commands = {
-            "firefox": ["firefox"],
+            "firefox": ["firefox-esr"],
             "vscode": ["code"],
             "terminal": ["gnome-terminal"],
+            "gedit": ["gedit"],
             "desktop": [],  # Switch to desktop
         }
         
