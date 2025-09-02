@@ -16,7 +16,18 @@ sleep 3
 
 # Start the computer control service
 echo "Starting computer control service on port ${PORT:-9995}..."
-cd /app
-export PYTHONPATH=/app/packages/computer_control/src:$PYTHONPATH
 cd /app/packages/computer_control
-exec poetry run python -m computer_control.main
+
+# Use system Python with installed packages
+echo "Starting service with system Python..."
+export PYTHONPATH="/app/packages/computer_control/src:/app/packages/shared/src:$PYTHONPATH"
+
+# Run directly with system Python
+exec python -c "
+import sys
+sys.path.insert(0, '/app/packages/computer_control/src')
+sys.path.insert(0, '/app/packages/shared/src')
+print('Python paths:', sys.path[:4])
+from computer_control.main import main
+main()
+"

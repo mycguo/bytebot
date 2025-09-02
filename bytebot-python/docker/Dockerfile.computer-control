@@ -38,9 +38,12 @@ COPY pyproject.toml poetry.lock* ./
 COPY packages/shared ./packages/shared
 COPY packages/computer_control ./packages/computer_control
 
-# Install dependencies
-RUN cd packages/shared && poetry install --only=main
-RUN cd packages/computer_control && poetry install --only=main && rm -rf $POETRY_CACHE_DIR
+# Install dependencies directly with pip instead of Poetry
+RUN cd packages/shared && pip install -e .
+RUN cd packages/computer_control && pip install -e .
+# Also install key dependencies directly
+RUN pip install fastapi uvicorn pydantic sqlalchemy
+RUN rm -rf $POETRY_CACHE_DIR
 
 # Set display environment for virtual display
 ENV DISPLAY=:99

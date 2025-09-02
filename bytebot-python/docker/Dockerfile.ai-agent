@@ -27,8 +27,12 @@ COPY alembic ./alembic
 COPY alembic.ini ./
 
 # Install dependencies
-RUN cd packages/shared && poetry install --only=main
-RUN cd packages/ai_agent && poetry install --only=main && rm -rf $POETRY_CACHE_DIR
+RUN cd packages/shared && poetry install --only=main --no-interaction
+RUN cd packages/ai_agent && poetry install --only=main --no-interaction
+# Install packages in system Python for easier access
+RUN cd packages/shared && poetry run pip install -e .
+RUN cd packages/ai_agent && poetry run pip install -e .
+RUN rm -rf $POETRY_CACHE_DIR
 
 # Expose port
 EXPOSE 9996

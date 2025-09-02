@@ -6,11 +6,11 @@ import json
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from .utils.api_client import APIClient
-from .components.task_creator import render_task_creator
-from .components.task_list import render_task_list
-from .components.desktop_viewer import render_desktop_viewer
-from .components.sidebar import render_sidebar
+from web_ui.utils.api_client import APIClient
+from web_ui.components.task_creator import render_task_creator
+from web_ui.components.task_list import render_task_list
+from web_ui.components.desktop_viewer import render_desktop_viewer
+from web_ui.components.sidebar import render_sidebar
 
 
 def main():

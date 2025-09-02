@@ -22,13 +22,24 @@ done
 # Run database migrations
 echo "Running database migrations..."
 cd /app
-if [ -f "alembic.ini" ]; then
+if command -v alembic >/dev/null 2>&1 && [ -f "alembic.ini" ]; then
   alembic upgrade head
 else
-  echo "Warning: alembic.ini not found, skipping migrations"
+  echo "Warning: alembic not available or alembic.ini not found, skipping migrations"
 fi
 
 # Start the AI agent service
 echo "Starting AI agent service on port ${PORT:-9996}..."
 cd /app/packages/ai_agent
-exec poetry run python -m ai_agent.main
+
+# Use the specific virtual environment Python
+VENV_PYTHON=$(poetry env info --path)/bin/python
+export PYTHONPATH="/app/packages/ai_agent/src:/app/packages/shared/src:$PYTHONPATH"
+
+# Debug: Show Python path and uvicorn location
+echo "Using Python: $VENV_PYTHON"
+$VENV_PYTHON -c "import sys; print('Python path:', sys.path[:3])"
+$VENV_PYTHON -c "import uvicorn; print('uvicorn found:', uvicorn.__version__)"
+
+# Start the service
+exec $VENV_PYTHON -m ai_agent.main

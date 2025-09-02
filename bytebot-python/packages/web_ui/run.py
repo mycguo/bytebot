@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 def main():
     """Launch the Streamlit app."""
-    port = int(os.getenv("STREAMLIT_PORT", "9992"))
+    port = int(os.getenv("STREAMLIT_PORT", "9999"))
     
     # Launch streamlit
     cmd = [

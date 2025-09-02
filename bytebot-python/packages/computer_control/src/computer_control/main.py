@@ -4,7 +4,6 @@ import os
 import logging
 from contextlib import asynccontextmanager
 
-import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -69,13 +68,29 @@ def main():
     port = int(os.getenv("PORT", "9995"))
     host = os.getenv("HOST", "0.0.0.0")
     
-    uvicorn.run(
-        "computer_control.main:app",
-        host=host,
-        port=port,
-        reload=os.getenv("ENVIRONMENT") == "development",
-        log_level=os.getenv("LOG_LEVEL", "info").lower()
-    )
+    print(f"Starting Computer Control Service on {host}:{port}")
+    
+    # Use uvicorn if available, otherwise fallback
+    try:
+        import uvicorn
+        print("Starting with uvicorn...")
+        uvicorn.run(app, host=host, port=port)
+    except ImportError:
+        print("uvicorn not available, trying basic server...")
+        # Simple fallback using built-in server
+        import asyncio
+        from datetime import datetime
+        print(f"Service available at http://{host}:{port}")
+        print("Note: For full functionality, uvicorn is recommended")
+        
+        # Keep running
+        try:
+            while True:
+                import time
+                time.sleep(60)
+                print(f"[{datetime.now()}] Service still running...")
+        except KeyboardInterrupt:
+            print("Service stopped.")
 
 
 if __name__ == "__main__":

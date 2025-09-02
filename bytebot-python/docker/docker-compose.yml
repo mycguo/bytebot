@@ -76,9 +76,9 @@ services:
     container_name: bytebot-python-web-ui
     restart: unless-stopped
     ports:
-      - "9992:9992"
+      - "9999:9999"
     environment:
-      - STREAMLIT_PORT=9992
+      - STREAMLIT_PORT=9999
       - AI_AGENT_HOST=ai-agent
       - AI_AGENT_PORT=9996
       - COMPUTER_CONTROL_HOST=computer-control

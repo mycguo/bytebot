@@ -22,16 +22,19 @@ COPY pyproject.toml poetry.lock* ./
 COPY packages/shared ./packages/shared
 COPY packages/web_ui ./packages/web_ui
 
-# Install dependencies
-RUN cd packages/shared && poetry install --only=main
-RUN cd packages/web_ui && poetry install --only=main && rm -rf $POETRY_CACHE_DIR
+# Install dependencies directly with pip instead of Poetry
+RUN cd packages/shared && pip install -e .
+RUN cd packages/web_ui && pip install -e .
+# Also install key dependencies directly
+RUN pip install streamlit plotly pandas httpx
+RUN rm -rf $POETRY_CACHE_DIR
 
 # Expose port
-EXPOSE 9992
+EXPOSE 9999
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:9992/_stcore/health || exit 1
+    CMD curl -f http://localhost:9999/_stcore/health || exit 1
 
 # Start script
 COPY docker/scripts/start-web-ui.sh /start.sh
