@@ -56,6 +56,17 @@ class APIClient:
             logger.error(f"Error making POST request to {endpoint}: {e}")
             return None
 
+    async def delete(self, endpoint: str) -> Optional[Dict[str, Any]]:
+        """Make DELETE request to AI agent service."""
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.delete(f"{self.agent_base_url}{endpoint}")
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            logger.error(f"Error making DELETE request to {endpoint}: {e}")
+            return None
+
     async def get_computer(self, endpoint: str) -> Optional[Dict[str, Any]]:
         """Make GET request to computer control service."""
         try:
@@ -116,6 +127,17 @@ class APIClient:
     async def abort_task(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Abort task processing."""
         return await self.post(f"/tasks/{task_id}/abort", {})
+
+    async def delete_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Delete a specific task."""
+        return await self.delete(f"/tasks/{task_id}")
+
+    async def clear_all_tasks(self, status: str = None) -> Optional[Dict[str, Any]]:
+        """Clear all tasks, optionally filtered by status."""
+        endpoint = "/tasks"
+        if status:
+            endpoint += f"?status={status}"
+        return await self.delete(endpoint)
 
     async def get_processor_status(self) -> Optional[Dict[str, Any]]:
         """Get processor status."""

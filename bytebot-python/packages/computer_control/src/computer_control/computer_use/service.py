@@ -8,7 +8,11 @@ import subprocess
 import time
 from typing import Any, Dict, List, Optional, Union
 
-import pyautogui
+try:
+    import pyautogui
+except ImportError:
+    pyautogui = None
+
 from pynput import keyboard, mouse
 from pynput.keyboard import Key
 from pynput.mouse import Button as MouseButton
@@ -45,9 +49,10 @@ class ComputerUseService:
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
         
-        # Configure PyAutoGUI
-        pyautogui.FAILSAFE = False  # Disable fail-safe to allow corner movements
-        pyautogui.PAUSE = 0.05  # Small pause between actions
+        # Configure PyAutoGUI if available
+        if pyautogui:
+            pyautogui.FAILSAFE = False  # Disable fail-safe to allow corner movements
+            pyautogui.PAUSE = 0.05  # Small pause between actions
         
         # Initialize controllers
         self.keyboard_controller = keyboard.Controller()
@@ -279,8 +284,11 @@ class ComputerUseService:
         """Paste text using clipboard."""
         text = action.text
         
-        # Use pyautogui to set clipboard and paste
-        pyautogui.write(text)
+        # Use pyautogui to set clipboard and paste, fallback to keyboard controller
+        if pyautogui:
+            pyautogui.write(text)
+        else:
+            self.keyboard_controller.type(text)
 
     async def _wait(self, action: WaitAction) -> None:
         """Wait for specified duration."""
@@ -377,7 +385,9 @@ class ComputerUseService:
         
         # Application launching logic (simplified)
         app_commands = {
-            "firefox": ["firefox-esr"],
+            "firefox": ["firefox-esr", "--no-sandbox", "--disable-dev-shm-usage"],
+            "chromium": ["chromium-browser", "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+            "chrome": ["chromium-browser", "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
             "vscode": ["code"],
             "terminal": ["gnome-terminal"],
             "gedit": ["gedit"],

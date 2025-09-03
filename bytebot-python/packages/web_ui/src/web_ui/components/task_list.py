@@ -36,8 +36,8 @@ def render_task_list():
         )
     
     with col3:
-        if st.button("🗑️ Clear All", help="Clear completed tasks"):
-            st.warning("Clear all feature would be implemented here")
+        if st.button("🗑️ Clear All", help="Clear all tasks"):
+            clear_all_tasks_with_confirmation()
     
     # Load and display tasks
     load_and_display_tasks(status_filter, limit)
@@ -152,7 +152,7 @@ def render_task_card(task: Dict[str, Any]):
         
         with col5:
             if st.button("🗑️ Delete", key=f"delete_{task_id}"):
-                st.warning("Delete functionality would be implemented here")
+                delete_single_task(task_id)
         
         st.markdown("---")
 
@@ -236,3 +236,60 @@ def refresh_single_task(task_id: str):
                 
     except Exception as e:
         st.error(f"❌ Error refreshing task: {str(e)}")
+
+
+def delete_single_task(task_id: str):
+    """Delete a single task."""
+    try:
+        with st.spinner("Deleting task..."):
+            api_client = st.session_state.api_client
+            result = asyncio.run(api_client.delete_task(task_id))
+            
+            if result:
+                st.success(f"✅ Task {task_id[:8]}... deleted!")
+                st.rerun()
+            else:
+                st.error("❌ Failed to delete task")
+                
+    except Exception as e:
+        st.error(f"❌ Error deleting task: {str(e)}")
+
+
+def clear_all_tasks_with_confirmation():
+    """Clear all tasks with confirmation dialog."""
+    try:
+        # Show confirmation dialog
+        if "confirm_clear_all" not in st.session_state:
+            st.session_state.confirm_clear_all = False
+        
+        if not st.session_state.confirm_clear_all:
+            with st.container():
+                st.warning("⚠️ Are you sure you want to delete ALL tasks? This action cannot be undone.")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if st.button("✅ Yes, Delete All", type="primary"):
+                        st.session_state.confirm_clear_all = True
+                        st.rerun()
+                
+                with col2:
+                    if st.button("❌ Cancel"):
+                        st.info("Clear all operation cancelled.")
+        else:
+            # Perform the deletion
+            with st.spinner("Deleting all tasks..."):
+                api_client = st.session_state.api_client
+                result = asyncio.run(api_client.clear_all_tasks())
+                
+                if result:
+                    message = result.get("message", "All tasks deleted")
+                    st.success(f"✅ {message}")
+                    st.session_state.confirm_clear_all = False
+                    st.rerun()
+                else:
+                    st.error("❌ Failed to delete all tasks")
+                    st.session_state.confirm_clear_all = False
+                
+    except Exception as e:
+        st.error(f"❌ Error clearing all tasks: {str(e)}")
+        st.session_state.confirm_clear_all = False

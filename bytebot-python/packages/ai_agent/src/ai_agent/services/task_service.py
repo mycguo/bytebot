@@ -142,3 +142,44 @@ class TaskService:
                 Task.type == TaskType.IMMEDIATE
             )
         ).order_by(Task.priority.desc(), Task.created_at).all()
+
+    async def delete_task(self, task_id: UUID) -> bool:
+        """Delete a task by ID."""
+        task = await self.get_task(task_id)
+        if not task:
+            return False
+        
+        # Delete associated messages first
+        self.db.query(Message).filter(Message.task_id == task_id).delete()
+        
+        # Delete the task
+        self.db.delete(task)
+        self.db.commit()
+        
+        self.logger.info(f"Deleted task {task_id}")
+        return True
+
+    async def clear_all_tasks(self, status_filter: Optional[TaskStatus] = None) -> int:
+        """Clear all tasks, optionally filtered by status."""
+        # Build base query
+        query = self.db.query(Task)
+        
+        if status_filter:
+            query = query.filter(Task.status == status_filter)
+        
+        # Get all task IDs to delete
+        task_ids = [task.id for task in query.all()]
+        
+        if not task_ids:
+            return 0
+        
+        # Delete associated messages first
+        for task_id in task_ids:
+            self.db.query(Message).filter(Message.task_id == task_id).delete()
+        
+        # Delete tasks
+        deleted_count = query.delete()
+        self.db.commit()
+        
+        self.logger.info(f"Deleted {deleted_count} tasks")
+        return deleted_count

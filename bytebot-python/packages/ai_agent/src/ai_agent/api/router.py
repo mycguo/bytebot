@@ -208,6 +208,45 @@ async def get_task_messages(
         raise HTTPException(status_code=500, detail=f"Failed to get messages: {str(e)}")
 
 
+@router.delete("/tasks/{task_id}")
+async def delete_task(
+    task_id: UUID,
+    task_service: TaskService = Depends(get_task_service)
+):
+    """Delete a specific task."""
+    try:
+        success = await task_service.delete_task(task_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        return {"message": f"Task {task_id} deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting task {task_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete task: {str(e)}")
+
+
+@router.delete("/tasks")
+async def clear_all_tasks(
+    status: TaskStatus = None,
+    task_service: TaskService = Depends(get_task_service)
+):
+    """Clear all tasks, optionally filtered by status."""
+    try:
+        deleted_count = await task_service.clear_all_tasks(status)
+        
+        if status:
+            return {"message": f"Deleted {deleted_count} tasks with status {status}"}
+        else:
+            return {"message": f"Deleted {deleted_count} tasks"}
+        
+    except Exception as e:
+        logger.error(f"Error clearing tasks: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear tasks: {str(e)}")
+
+
 @router.get("/processor/status")
 async def get_processor_status(
     task_processor: TaskProcessor = Depends(get_task_processor)

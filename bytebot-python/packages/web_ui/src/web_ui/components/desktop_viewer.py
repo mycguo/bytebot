@@ -104,7 +104,7 @@ def display_desktop_screenshot():
             st.image(
                 image, 
                 caption=f"Desktop Screenshot - {screenshot_data.get('width', 'Unknown')}x{screenshot_data.get('height', 'Unknown')}",
-                use_column_width=True
+                use_container_width=True
             )
             
             # Add click handler info
