@@ -22,10 +22,6 @@ def render_task_creator():
             height=100
         )
         
-        # Clear the example after use
-        if "example_description" in st.session_state:
-            del st.session_state.example_description
-        
         # Priority selection
         priority = st.selectbox(
             "Priority",
@@ -49,6 +45,7 @@ def render_task_creator():
             # Model options based on provider
             model_options = {
                 "anthropic": [
+                    ("claude-sonnet-4-20250514", "Claude 4 Sonnet"),
                     ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet"),
                     ("claude-3-5-haiku-20241022", "Claude 3.5 Haiku"),
                     ("claude-3-opus-20240229", "Claude 3 Opus")
@@ -83,6 +80,10 @@ def render_task_creator():
         submitted = st.form_submit_button("🚀 Create Task", use_container_width=True)
         
         if submitted and description.strip():
+            # Clear the example description after successful form submission
+            if "example_description" in st.session_state:
+                del st.session_state.example_description
+            
             # Create model configuration
             model_config = {
                 "provider": provider,

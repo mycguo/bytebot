@@ -180,7 +180,7 @@ class TaskProcessor:
             
             # Get model configuration from task
             model_config = task.model if hasattr(task, 'model') and task.model else {
-                "name": "claude-3-5-sonnet-20241022"
+                "name": "claude-3-5-sonnet-20240620"
             }
             
             try:
@@ -188,7 +188,7 @@ class TaskProcessor:
                 response = await self.ai_provider.generate_message(
                     system_prompt=AGENT_SYSTEM_PROMPT,
                     messages=messages,
-                    model=model_config.get("name", "claude-3-5-sonnet-20241022"),
+                    model=model_config.get("name", "claude-3-5-sonnet-20240620"),
                     use_tools=True,
                     signal=abort_event
                 )

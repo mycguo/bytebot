@@ -13,7 +13,7 @@ def render_sidebar() -> str:
         # Navigation
         page = st.selectbox(
             "📍 Navigate",
-            ["Tasks", "Desktop", "Settings"],
+            ["Tasks & Desktop", "Settings"],
             index=0
         )
         

@@ -485,7 +485,8 @@ class AnthropicService(BaseAIProvider):
     def get_available_models(self) -> List[str]:
         """Get available Anthropic models."""
         return [
-            "claude-3-5-sonnet-20241022",
+            "claude-sonnet-4-20250514",
+            "claude-3-5-sonnet-20240620",
             "claude-3-5-haiku-20241022", 
             "claude-3-opus-20240229"
         ]

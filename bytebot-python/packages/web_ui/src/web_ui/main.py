@@ -28,7 +28,7 @@ def main():
         st.session_state.api_client = APIClient()
     
     if "current_page" not in st.session_state:
-        st.session_state.current_page = "Tasks"
+        st.session_state.current_page = "Tasks & Desktop"
     
     if "auto_refresh" not in st.session_state:
         st.session_state.auto_refresh = True
@@ -81,12 +81,31 @@ def main():
     st.session_state.current_page = page
     
     # Main content based on selected page
-    if page == "Tasks":
-        render_tasks_page()
-    elif page == "Desktop":
-        render_desktop_page()
+    if page == "Tasks & Desktop":
+        render_combined_page()
     elif page == "Settings":
         render_settings_page()
+
+
+def render_combined_page():
+    """Render the combined tasks and desktop page."""
+    # Create columns with 1/3 for tasks and 2/3 for desktop
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.subheader("📝 Tasks")
+        
+        # Task Creator
+        with st.expander("➕ Create New Task", expanded=True):
+            render_task_creator()
+        
+        # Task List
+        st.markdown("### 📋 Task List")
+        render_task_list()
+    
+    with col2:
+        st.subheader("🖥️ Virtual Desktop")
+        render_desktop_viewer()
 
 
 def render_tasks_page():
