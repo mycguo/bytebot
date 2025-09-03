@@ -301,10 +301,10 @@ class ComputerUseService:
         import tempfile
         import subprocess
         import os
+        import uuid
         
-        # Create temporary file for screenshot
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
-            tmp_path = tmp_file.name
+        # Create temporary file path for screenshot (but don't create the file yet)
+        tmp_path = os.path.join(tempfile.gettempdir(), f"scrot_{uuid.uuid4().hex}.png")
         
         try:
             # Use scrot to take screenshot of the virtual display

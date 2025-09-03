@@ -3,25 +3,28 @@ set -e
 
 echo "🚀 Starting Computer Control Service..."
 
-# Start virtual display
+# Start our own virtual display for GUI rendering
 echo "Starting virtual display..."
 # Clean up any existing X server lock
 rm -f /tmp/.X99-lock
-# Start Xvfb
-Xvfb :99 -screen 0 1280x960x24 &
+# Start Xvfb with 24-bit color depth for better GUI rendering
+Xvfb :99 -screen 0 1280x960x24 -ac +extension GLX +render -noreset -dpi 96 &
 export DISPLAY=:99
 
 # Wait for display to be ready
 sleep 3
 
-# Start desktop environment components
-echo "Starting desktop environment..."
-xfwm4 &
-sleep 1
-xfce4-panel &
-sleep 1
-xfdesktop &
+# Start window manager for proper GUI rendering
+echo "Starting window manager..."
+export XDG_CURRENT_DESKTOP=XFCE
+export XDG_SESSION_DESKTOP=XFCE
+export XDG_SESSION_TYPE=x11
+
+# Start fluxbox window manager in background
+fluxbox &
 sleep 2
+
+echo "Display server and window manager ready"
 
 
 # Start the computer control service
@@ -41,5 +44,3 @@ print('Python paths:', sys.path[:4])
 from computer_control.main import main
 main()
 "
-
-/usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf -n
