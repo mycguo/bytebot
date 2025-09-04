@@ -168,12 +168,12 @@ class TaskProcessor:
             )
             return
         
-        max_iterations = 12  # Prevent infinite loops (reduced from 20)
+        max_iterations = 25  # Increased from 12 to match TypeScript behavior
         iteration = 0
         
         # Loop detection variables
         screenshot_count = 0
-        max_consecutive_screenshots = 1  # Only allow 1 screenshot before forcing action
+        max_consecutive_screenshots = 4  # Allow 4 screenshots like TypeScript (increased from 1)
         last_actions = []
         max_action_history = 5
         
@@ -220,18 +220,18 @@ class TaskProcessor:
                             # Check if this is a blocked screenshot
                             is_blocked_screenshot = False
                             
-                            # Track screenshot usage for loop detection
+                            # Track screenshot usage for loop detection (more lenient like TypeScript)
                             if block.name == "computer_screenshot":
                                 screenshot_count += 1
                                 if screenshot_count > max_consecutive_screenshots:
-                                    self.logger.warning(f"Task {task.id} taking too many consecutive screenshots ({screenshot_count}), adding guidance")
+                                    self.logger.warning(f"Task {task.id} taking many consecutive screenshots ({screenshot_count}), adding gentle guidance")
                                     
-                                    # Create FORCED action guidance based on task description
-                                    guidance_text = "SCREENSHOT BLOCKED: Too many screenshots without action!\n\n"
+                                    # Provide gentle guidance instead of blocking (like TypeScript behavior)
+                                    guidance_text = f"You have taken {screenshot_count} consecutive screenshots. Consider taking an action to progress the task:\n"
                                     if "gmail.com" in task.description.lower() or "browser" in task.description.lower():
-                                        guidance_text += "IMMEDIATE ACTION REQUIRED for browser task:\n1. Launch Firefox: computer_application with application='firefox'\n2. Wait 3 seconds for Firefox to load\n3. Click address bar at coordinates x=640, y=80: computer_click_mouse\n4. Type 'gmail.com': computer_type_text with text='gmail.com'\n5. Press Enter: computer_type_keys with keys=['Return']\n\nDO NOT take another screenshot. Take action NOW!"
+                                        guidance_text += "For browser tasks:\n1. Launch Firefox if not open: computer_application with application='firefox'\n2. Click address bar: computer_click_mouse\n3. Type URL: computer_type_text\n4. Press Enter: computer_type_keys"
                                     else:
-                                        guidance_text += "You MUST take action instead of more screenshots:\n- computer_click_mouse: Click on elements\n- computer_type_text: Type text\n- computer_application: Launch apps\n- set_task_status: Complete task\n\nSTOP taking screenshots and ACT!"
+                                        guidance_text += "Available actions:\n- computer_click_mouse: Click on elements\n- computer_type_text: Type text\n- computer_application: Launch apps\n- set_task_status: Complete or report status"
                                     
                                     guidance_result = ToolResultContentBlock(
                                         type=MessageContentType.TOOL_RESULT,
@@ -257,6 +257,42 @@ class TaskProcessor:
                                 # Execute computer tool
                                 result = await self._execute_computer_tool(block)
                                 tool_results.append(result)
+                                
+                                # Auto-screenshot after non-screenshot actions like TypeScript
+                                if block.name != "computer_screenshot":
+                                    try:
+                                        # Wait briefly for UI to settle (like TypeScript: 750ms)
+                                        await asyncio.sleep(0.75)
+                                        
+                                        # Take automatic screenshot
+                                        auto_screenshot_data = {
+                                            "action": "screenshot"
+                                        }
+                                        
+                                        async with httpx.AsyncClient() as client:
+                                            response = await client.post(
+                                                f"{self.computer_control_url}/computer-use",
+                                                json=auto_screenshot_data,
+                                                timeout=30.0
+                                            )
+                                            if response.status_code == 200:
+                                                screenshot_result = response.json()
+                                                if "data" in screenshot_result:
+                                                    from shared.types.message_content import ImageContentBlock, ImageSource
+                                                    image_block = ImageContentBlock(
+                                                        type=MessageContentType.IMAGE,
+                                                        source=ImageSource(
+                                                            media_type="image/png",
+                                                            type="base64",
+                                                            data=screenshot_result["data"]
+                                                        )
+                                                    )
+                                                    # Add image to the existing tool result
+                                                    result.content.append(image_block)
+                                                    
+                                    except Exception as e:
+                                        self.logger.debug(f"Auto-screenshot after {block.name} failed: {e}")
+                                        # Don't fail the task if auto-screenshot fails
                         elif is_set_task_status_tool_use_block(block):
                             # Handle task status change
                             await self._handle_task_status_change(task_service, task.id, block)
