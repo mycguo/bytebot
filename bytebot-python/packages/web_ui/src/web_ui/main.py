@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from web_ui.utils.api_client import APIClient
+from web_ui.utils.async_utils import AsyncRunner
 from web_ui.components.task_creator import render_task_creator
 from web_ui.components.task_list import render_task_list
 from web_ui.components.desktop_viewer import render_desktop_viewer
@@ -27,6 +28,9 @@ def main():
     if "api_client" not in st.session_state:
         st.session_state.api_client = APIClient()
     
+    if "async_runner" not in st.session_state:
+        st.session_state.async_runner = AsyncRunner()
+        
     if "current_page" not in st.session_state:
         st.session_state.current_page = "Tasks & Desktop"
     
@@ -176,37 +180,56 @@ def render_settings_page():
     with st.expander("📊 System Status"):
         if st.button("🔍 Check Services Status"):
             check_services_status()
+        
+        render_service_status()
 
 
 def check_services_status():
-    """Check the status of all services."""
+    """Triggers async checks for service statuses."""
     api_client = st.session_state.api_client
+    runner = st.session_state.async_runner
     
+    st.session_state.agent_status_future = runner.run(api_client.get("/health"))
+    st.session_state.computer_status_future = runner.run(api_client.get_computer("/health"))
+    st.rerun()
+
+def render_service_status():
+    """Renders the status of services based on futures in session state."""
     col1, col2 = st.columns(2)
-    
+
     with col1:
         st.write("**AI Agent Service:**")
-        try:
-            response = asyncio.run(api_client.get("/health"))
-            if response:
-                st.success("✅ Online")
-                st.json(response)
+        if 'agent_status_future' in st.session_state:
+            future = st.session_state.agent_status_future
+            if future.done():
+                try:
+                    response = future.result()
+                    st.success("✅ Online")
+                    st.json(response)
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
+                del st.session_state.agent_status_future
             else:
-                st.error("❌ Offline")
-        except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
-    
+                st.spinner("Checking...")
+        else:
+            st.write("Click button to check status.")
+
     with col2:
         st.write("**Computer Control Service:**")
-        try:
-            response = asyncio.run(api_client.get_computer("/health"))
-            if response:
-                st.success("✅ Online") 
-                st.json(response)
+        if 'computer_status_future' in st.session_state:
+            future = st.session_state.computer_status_future
+            if future.done():
+                try:
+                    response = future.result()
+                    st.success("✅ Online")
+                    st.json(response)
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
+                del st.session_state.computer_status_future
             else:
-                st.error("❌ Offline")
-        except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
+                st.spinner("Checking...")
+        else:
+            st.write("Click button to check status.")
 
 
 if __name__ == "__main__":

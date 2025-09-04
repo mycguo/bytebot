@@ -113,3 +113,5 @@ Each package has its own test suite. Run tests from package directories or use D
 ## AI Model Integration
 
 The system supports multiple AI providers through modular service classes. Each provider (Anthropic, OpenAI, Google) has its own module with standardized interfaces for computer use tool calling.
+- by default, use model claude-sonnet-4-20250514 for claude
+- I am rewrite the application from typescript to python. Use typescript project as a reference and don't change it. You can refer it when changing code for python. They should do the same thing.

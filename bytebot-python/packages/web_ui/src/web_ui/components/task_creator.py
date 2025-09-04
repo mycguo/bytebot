@@ -1,130 +1,96 @@
 """Task creation component."""
 
 import streamlit as st
-import asyncio
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 
 def render_task_creator():
     """Render the task creation interface."""
     
-    # Show example tasks first
     render_task_examples()
     
     with st.form("create_task_form", clear_on_submit=True):
-        # Task description with example pre-fill
         initial_value = st.session_state.get("example_description", "")
         description = st.text_area(
             "Task Description",
             value=initial_value,
             placeholder="Describe what you want the AI to do...",
-            help="Be specific about what you want accomplished",
             height=100
         )
+        priority = st.selectbox("Priority", ["LOW", "MEDIUM", "HIGH", "URGENT"], index=1)
         
-        # Priority selection
-        priority = st.selectbox(
-            "Priority",
-            ["LOW", "MEDIUM", "HIGH", "URGENT"],
-            index=1,
-            help="Task priority level"
-        )
-        
-        # AI Model selection
         col1, col2 = st.columns(2)
-        
         with col1:
-            provider = st.selectbox(
-                "AI Provider",
-                ["anthropic", "openai", "google"],
-                index=0,
-                help="Choose AI provider"
-            )
-        
+            provider = st.selectbox("AI Provider", ["anthropic", "openai", "google"], index=0)
         with col2:
-            # Model options based on provider
             model_options = {
                 "anthropic": [
                     ("claude-sonnet-4-20250514", "Claude 4 Sonnet"),
                     ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet (Invalid)"),
-                    ("claude-3-5-haiku-20241022", "Claude 3.5 Haiku (Invalid)"),
-                    ("claude-3-opus-20240229", "Claude 3 Opus (Invalid)")
                 ],
-                "openai": [
-                    ("gpt-4o", "GPT-4o"),
-                    ("gpt-4o-mini", "GPT-4o Mini"),
-                    ("gpt-4-turbo", "GPT-4 Turbo")
-                ],
-                "google": [
-                    ("gemini-2.5-pro", "Gemini 2.5 Pro"),
-                    ("gemini-2.5-flash", "Gemini 2.5 Flash")
-                ]
+                "openai": [("gpt-4o", "GPT-4o"), ("gpt-4o-mini", "GPT-4o Mini")],
+                "google": [("gemini-2.5-pro", "Gemini 2.5 Pro")]
             }
-            
             model_name, model_title = st.selectbox(
-                "Model",
-                model_options[provider],
-                format_func=lambda x: x[1],
-                help="Choose specific model"
+                "Model", model_options[provider], format_func=lambda x: x[1]
             )
-        
-        # File upload
+
         uploaded_files = st.file_uploader(
-            "Upload Files (Optional)",
-            accept_multiple_files=True,
-            type=['txt', 'pdf', 'png', 'jpg', 'jpeg', 'csv', 'json'],
-            help="Upload files that the AI should process"
+            "Upload Files (Optional)", accept_multiple_files=True
         )
         
-        # Submit button
         submitted = st.form_submit_button("🚀 Create Task", use_container_width=True)
         
         if submitted and description.strip():
-            # Clear the example description after successful form submission
             if "example_description" in st.session_state:
                 del st.session_state.example_description
             
-            # Create model configuration
-            model_config = {
-                "provider": provider,
-                "name": model_name,
-                "title": model_title
-            }
-            
-            # Create task
-            create_task_async(description.strip(), priority, model_config, uploaded_files)
+            model_config = {"provider": provider, "name": model_name, "title": model_title}
+            trigger_create_task(description.strip(), priority, model_config, uploaded_files)
         
         elif submitted and not description.strip():
             st.error("❌ Please provide a task description!")
 
+    render_create_task_status()
 
-def create_task_async(description: str, priority: str, model: Dict[str, Any], files=None):
-    """Create task asynchronously."""
-    try:
-        with st.spinner("Creating task..."):
-            api_client = st.session_state.api_client
-            
-            # TODO: Handle file uploads
-            if files:
-                st.info(f"📁 Files uploaded: {len(files)} (file processing will be added)")
-            
-            # Create the task
-            result = asyncio.run(api_client.create_task(description, priority, model))
-            
-            if result:
-                st.success(f"✅ Task created successfully!")
-                st.json(result)
+
+def trigger_create_task(description: str, priority: str, model: Dict[str, Any], files: List[Any]):
+    """Trigger the asynchronous creation of a task."""
+    api_client = st.session_state.api_client
+    runner = st.session_state.async_runner
+    
+    # TODO: Handle file uploads properly by passing data, not Streamlit objects
+    if files:
+        st.info(f"📁 Files uploaded: {len(files)} (file processing not implemented yet)")
+
+    future = runner.run(api_client.create_task(description, priority, model))
+    st.session_state['create_task_future'] = future
+    st.rerun()
+
+
+def render_create_task_status():
+    """Render the status of the task creation future."""
+    if 'create_task_future' in st.session_state:
+        future = st.session_state['create_task_future']
+        
+        if future.done():
+            try:
+                result = future.result()
+                st.success("✅ Task created successfully!")
+                # st.json(result) # Can be too verbose
                 
                 # Trigger refresh of task list
                 if "task_list_refresh" not in st.session_state:
                     st.session_state.task_list_refresh = 0
                 st.session_state.task_list_refresh += 1
-                
-            else:
-                st.error("❌ Failed to create task. Please check if the AI Agent service is running.")
-                
-    except Exception as e:
-        st.error(f"❌ Error creating task: {str(e)}")
+
+            except Exception as e:
+                st.error(f"❌ Error creating task: {str(e)}")
+            
+            del st.session_state['create_task_future']
+        else:
+            # The spinner is implicitly handled by the rerun and this check
+            st.spinner("Creating task...")
 
 
 def render_task_examples():
@@ -134,9 +100,6 @@ def render_task_examples():
             "Take a screenshot of the desktop",
             "Open Firefox and navigate to Wikipedia",
             "Create a new text file with today's date",
-            "Search for Python tutorials and bookmark interesting ones",
-            "Take screenshots of the top 5 news websites",
-            "Read the uploaded document and create a summary"
         ]
         
         for example in examples:
