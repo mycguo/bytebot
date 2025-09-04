@@ -121,7 +121,7 @@ class AsyncRunner:
     
     def _run_event_loop(self):
         """Run the event loop in the background thread with comprehensive error handling."""
-        thread_name = Thread.current_thread().name
+        thread_name = threading.current_thread().name
         logger.debug(f"Starting event loop in thread {thread_name}")
         
         try:
