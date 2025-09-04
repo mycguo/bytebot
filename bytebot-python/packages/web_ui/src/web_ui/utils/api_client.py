@@ -81,10 +81,21 @@ class APIClient:
     async def post_computer(self, endpoint: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Make POST request to computer control service."""
         try:
+            logger.info(f"Making POST request to computer service: {self.computer_base_url}{endpoint} with data: {data}")
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(f"{self.computer_base_url}{endpoint}", json=data)
+                logger.info(f"Computer service response status: {response.status_code}")
                 response.raise_for_status()
-                return response.json()
+                result = response.json()
+                logger.info(f"Computer service response keys: {list(result.keys()) if result else 'None'}")
+                if data.get("action") == "screenshot" and result:
+                    logger.info(f"Screenshot response contains 'image': {'image' in result}")
+                    logger.info(f"Screenshot response contains 'data': {'data' in result}")
+                    if "image" in result:
+                        logger.info(f"Screenshot image data length: {len(result.get('image', ''))}")
+                    if "data" in result:
+                        logger.info(f"Screenshot data length: {len(result.get('data', ''))}")
+                return result
         except Exception as e:
             logger.error(f"Error making POST request to computer service {endpoint}: {e}")
             return None
@@ -95,8 +106,8 @@ class APIClient:
         if model is None:
             model = {
                 "provider": "anthropic",
-                "name": "claude-3-5-sonnet-20241022",
-                "title": "Claude 3.5 Sonnet"
+                "name": "claude-sonnet-4-20250514",
+                "title": "Claude 4 Sonnet"
             }
         
         data = {

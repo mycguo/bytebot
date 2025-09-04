@@ -5,6 +5,10 @@ import asyncio
 import base64
 from PIL import Image
 import io
+import logging
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 
 def render_desktop_viewer():
@@ -76,17 +80,38 @@ def take_screenshot_and_display():
     """Take a screenshot and display it."""
     try:
         with st.spinner("Taking screenshot..."):
+            logger.info("Starting screenshot capture process")
             api_client = st.session_state.api_client
             result = asyncio.run(api_client.take_screenshot())
             
-            if result and "data" in result:
-                st.session_state.current_screenshot = result
-                st.success("📷 Screenshot captured!")
-                st.rerun()
+            logger.info(f"Screenshot API result: {result is not None}")
+            if result:
+                logger.info(f"Screenshot result keys: {list(result.keys())}")
+                logger.info(f"Screenshot contains 'data': {'data' in result}")
+                logger.info(f"Screenshot contains 'image': {'image' in result}")
+                
+                # Check for different possible response formats
+                image_key = None
+                if "data" in result:
+                    image_key = "data"
+                elif "image" in result:
+                    image_key = "image"
+                
+                if image_key:
+                    logger.info(f"Using image key: {image_key}")
+                    logger.info(f"Image data length: {len(result[image_key])}")
+                    st.session_state.current_screenshot = result
+                    st.success("📷 Screenshot captured!")
+                    st.rerun()
+                else:
+                    logger.error(f"No image data found in result. Available keys: {list(result.keys())}")
+                    st.error("❌ No image data found in screenshot response.")
             else:
+                logger.error("Screenshot API returned None")
                 st.error("❌ Failed to take screenshot. Check if computer control service is running.")
                 
     except Exception as e:
+        logger.error(f"Error taking screenshot: {str(e)}", exc_info=True)
         st.error(f"❌ Error taking screenshot: {str(e)}")
 
 
@@ -94,11 +119,25 @@ def display_desktop_screenshot():
     """Display the current desktop screenshot."""
     screenshot_data = st.session_state.current_screenshot
     
+    logger.info(f"Displaying screenshot with keys: {list(screenshot_data.keys())}")
+    
+    # Check for different possible image keys
+    image_key = None
     if "data" in screenshot_data:
+        image_key = "data"
+    elif "image" in screenshot_data:
+        image_key = "image"
+    
+    if image_key:
         try:
+            logger.info(f"Using image key '{image_key}' with data length: {len(screenshot_data[image_key])}")
+            
             # Decode base64 image
-            image_data = base64.b64decode(screenshot_data["data"])
+            image_data = base64.b64decode(screenshot_data[image_key])
+            logger.info(f"Decoded image data length: {len(image_data)}")
+            
             image = Image.open(io.BytesIO(image_data))
+            logger.info(f"PIL Image size: {image.size}, mode: {image.mode}")
             
             # Display with click coordinates
             st.image(
@@ -121,8 +160,10 @@ def display_desktop_screenshot():
                     st.metric("Format", screenshot_data.get("format", "PNG"))
                     
         except Exception as e:
+            logger.error(f"Error displaying screenshot: {str(e)}", exc_info=True)
             st.error(f"❌ Error displaying screenshot: {str(e)}")
     else:
+        logger.error(f"No image data found. Available keys: {list(screenshot_data.keys())}")
         st.error("❌ No image data found in screenshot")
 
 

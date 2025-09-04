@@ -173,7 +173,7 @@ class TaskProcessor:
         
         # Loop detection variables
         screenshot_count = 0
-        max_consecutive_screenshots = 2  # Reduced from 3 to 2
+        max_consecutive_screenshots = 1  # Only allow 1 screenshot before forcing action
         last_actions = []
         max_action_history = 5
         
@@ -226,14 +226,20 @@ class TaskProcessor:
                                 if screenshot_count > max_consecutive_screenshots:
                                     self.logger.warning(f"Task {task.id} taking too many consecutive screenshots ({screenshot_count}), adding guidance")
                                     
-                                    # Add strong guidance message instead of executing more screenshots
+                                    # Create FORCED action guidance based on task description
+                                    guidance_text = "SCREENSHOT BLOCKED: Too many screenshots without action!\n\n"
+                                    if "gmail.com" in task.description.lower() or "browser" in task.description.lower():
+                                        guidance_text += "IMMEDIATE ACTION REQUIRED for browser task:\n1. Launch Firefox: computer_application with application='firefox'\n2. Wait 3 seconds for Firefox to load\n3. Click address bar at coordinates x=640, y=80: computer_click_mouse\n4. Type 'gmail.com': computer_type_text with text='gmail.com'\n5. Press Enter: computer_type_keys with keys=['Return']\n\nDO NOT take another screenshot. Take action NOW!"
+                                    else:
+                                        guidance_text += "You MUST take action instead of more screenshots:\n- computer_click_mouse: Click on elements\n- computer_type_text: Type text\n- computer_application: Launch apps\n- set_task_status: Complete task\n\nSTOP taking screenshots and ACT!"
+                                    
                                     guidance_result = ToolResultContentBlock(
                                         type=MessageContentType.TOOL_RESULT,
                                         tool_use_id=block.id,
                                         content=[
                                             TextContentBlock(
                                                 type=MessageContentType.TEXT,
-                                                text="SCREENSHOT BLOCKED: You've taken too many screenshots without taking action. You MUST now use interaction tools to complete your task:\n- computer_click_mouse: Click on elements\n- computer_type_text: Type text into fields\n- computer_paste_text: Paste URLs or text\n- set_task_status: Mark task as completed\n\nFor the gmail.com task: Click the address bar and type 'gmail.com' or use computer_paste_text. NO MORE SCREENSHOTS until you take action!"
+                                                text=guidance_text
                                             )
                                         ]
                                     )

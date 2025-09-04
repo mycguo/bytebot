@@ -46,9 +46,9 @@ def render_task_creator():
             model_options = {
                 "anthropic": [
                     ("claude-sonnet-4-20250514", "Claude 4 Sonnet"),
-                    ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet"),
-                    ("claude-3-5-haiku-20241022", "Claude 3.5 Haiku"),
-                    ("claude-3-opus-20240229", "Claude 3 Opus")
+                    ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet (Invalid)"),
+                    ("claude-3-5-haiku-20241022", "Claude 3.5 Haiku (Invalid)"),
+                    ("claude-3-opus-20240229", "Claude 3 Opus (Invalid)")
                 ],
                 "openai": [
                     ("gpt-4o", "GPT-4o"),
