@@ -11,6 +11,7 @@ from web_ui.utils.async_utils import AsyncRunner
 from web_ui.components.task_creator import render_task_creator
 from web_ui.components.task_list import render_task_list
 from web_ui.components.desktop_viewer import render_desktop_viewer
+from web_ui.components.live_desktop_view import render_live_desktop_view, handle_live_action_results
 from web_ui.components.sidebar import render_sidebar
 
 
@@ -87,6 +88,8 @@ def main():
     # Main content based on selected page
     if page == "Tasks & Desktop":
         render_combined_page()
+    elif page == "Live Desktop View":
+        render_live_desktop_page()
     elif page == "Settings":
         render_settings_page()
 
@@ -129,6 +132,25 @@ def render_desktop_page():
     """Render the desktop viewer page."""
     st.subheader("🖥️ Virtual Desktop")
     render_desktop_viewer()
+
+
+def render_live_desktop_page():
+    """Render the live desktop view page."""
+    # Handle any pending action results first
+    handle_live_action_results()
+    
+    # Main title
+    st.markdown("""
+    <div style="text-align: center; padding: 1rem 0;">
+        <h2>🖥️ Live Desktop View</h2>
+        <p style="color: #666; margin-top: 0.5rem;">
+            Real-time view of your virtual desktop with interactive controls
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Render the live desktop view component
+    render_live_desktop_view()
 
 
 def render_settings_page():

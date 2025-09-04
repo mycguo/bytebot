@@ -13,19 +13,9 @@ def render_sidebar() -> str:
         # Navigation
         page = st.selectbox(
             "📍 Navigate",
-            ["Tasks & Desktop", "Settings"],
+            ["Tasks & Desktop", "Live Desktop View", "Settings"],
             index=0
         )
-        
-        st.markdown("---")
-        
-        # Quick Stats
-        st.subheader("📊 Quick Stats")
-        
-        # This would be populated with real data
-        st.metric("Active Tasks", "3", "1")
-        st.metric("Completed Today", "12", "5") 
-        st.metric("Success Rate", "94%", "2%")
         
         st.markdown("---")
         
