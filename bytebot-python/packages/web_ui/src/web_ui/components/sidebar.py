@@ -6,7 +6,12 @@ import streamlit as st
 def render_sidebar() -> str:
     """Render sidebar navigation and return selected page."""
     with st.sidebar:
-        st.image("https://via.placeholder.com/200x80/1e3a8a/ffffff?text=Bytebot", width=200)
+        # Use local SVG logo
+        try:
+            st.image("/app/packages/web_ui/assets/bytebot_transparent_logo_dark.svg", width=200)
+        except Exception:
+            # Fallback to text if SVG not found
+            st.markdown("**🤖 Bytebot**")
         
         st.markdown("---")
         

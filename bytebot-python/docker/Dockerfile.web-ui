@@ -22,6 +22,9 @@ COPY pyproject.toml poetry.lock* ./
 COPY packages/shared ./packages/shared
 COPY packages/web_ui ./packages/web_ui
 
+# Ensure assets directory exists and has correct permissions
+RUN mkdir -p /app/packages/web_ui/assets
+
 # Install dependencies directly with pip instead of Poetry
 RUN cd packages/shared && pip install -e .
 RUN cd packages/web_ui && pip install -e .
