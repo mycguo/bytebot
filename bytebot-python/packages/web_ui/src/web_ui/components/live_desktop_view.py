@@ -23,6 +23,8 @@ def render_live_desktop_view():
     
     with col2:
         if st.button("📷 Refresh Now", use_container_width=True):
+            # Disable auto-refresh when user manually refreshes
+            st.session_state.live_desktop_auto_refresh = False
             trigger_live_screenshot()
     
     with col3:
@@ -37,16 +39,26 @@ def render_live_desktop_view():
     
     st.markdown("---")
     
-    # Handle auto-refresh
+    # Handle auto-refresh (but not when manual actions are pending)
     if auto_refresh:
-        if "last_live_refresh" not in st.session_state:
-            st.session_state.last_live_refresh = 0
+        # Don't auto-refresh if we have pending actions to avoid interference
+        has_pending_actions = (
+            'live_click_future' in st.session_state or 
+            'live_type_future' in st.session_state or 
+            'live_app_future' in st.session_state or
+            'live_screenshot_future' in st.session_state or  # Also check for pending screenshot
+            st.session_state.get('live_refresh_after_action', False)
+        )
         
-        import time
-        current_time = time.time()
-        if current_time - st.session_state.last_live_refresh > refresh_interval:
-            trigger_live_screenshot()
-            st.session_state.last_live_refresh = current_time
+        if not has_pending_actions:
+            if "last_live_refresh" not in st.session_state:
+                st.session_state.last_live_refresh = 0
+            
+            import time
+            current_time = time.time()
+            if current_time - st.session_state.last_live_refresh > refresh_interval:
+                trigger_live_screenshot()
+                st.session_state.last_live_refresh = current_time
     
     # Handle screenshot results
     render_live_screenshot_result()
@@ -64,7 +76,7 @@ def trigger_live_screenshot():
     runner = st.session_state.async_runner
     future = runner.run(api_client.take_screenshot())
     st.session_state['live_screenshot_future'] = future
-    st.rerun()
+    # Don't call st.rerun() immediately - let the natural page flow handle it
 
 
 def render_live_screenshot_result():
@@ -85,8 +97,28 @@ def render_live_screenshot_result():
                 st.error(f"❌ Error capturing live desktop: {e}")
                 logger.error(f"Live screenshot error: {e}")
             del st.session_state['live_screenshot_future']
+            # Only rerun once when the screenshot completes
+            st.rerun()
         else:
-            st.spinner("🔄 Capturing live desktop...")
+            # Don't use st.spinner() as it causes continuous reruns
+            # Show status and schedule a rerun after a delay to check again
+            st.info("🔄 Taking screenshot...")
+            
+            # Use a simple timeout approach - rerun after 1 second to check again
+            import time
+            import threading
+            
+            def check_future_later():
+                time.sleep(1.0)  # Wait 1 second
+                try:
+                    # Only rerun if the future still exists and might be done
+                    if 'live_screenshot_future' in st.session_state:
+                        st.rerun()
+                except:
+                    pass  # Ignore rerun errors
+                    
+            # Start the delayed check in background
+            threading.Thread(target=check_future_later, daemon=True).start()
 
 
 def display_live_desktop():
@@ -186,13 +218,16 @@ def trigger_live_click_and_refresh(x: int, y: int, button: str):
     api_client = st.session_state.api_client
     runner = st.session_state.async_runner
     
+    # Disable auto-refresh when user takes manual action
+    st.session_state.live_desktop_auto_refresh = False
+    
     # First click
     click_future = runner.run(api_client.click_mouse(x, y, button))
     st.session_state['live_click_future'] = (f"Click at ({x}, {y})", click_future)
     
-    # Set flag to refresh after click
+    # Set flag to refresh after click (but don't rerun immediately)
     st.session_state['live_refresh_after_action'] = True
-    st.rerun()
+    # Removed st.rerun() to prevent immediate loop
 
 
 def trigger_live_type_and_refresh(text: str):
@@ -200,19 +235,25 @@ def trigger_live_type_and_refresh(text: str):
     api_client = st.session_state.api_client
     runner = st.session_state.async_runner
     
+    # Disable auto-refresh when user takes manual action
+    st.session_state.live_desktop_auto_refresh = False
+    
     # First type
     type_future = runner.run(api_client.type_text(text))
     st.session_state['live_type_future'] = (f"Type: {text[:20]}...", type_future)
     
-    # Set flag to refresh after typing
+    # Set flag to refresh after typing (but don't rerun immediately)
     st.session_state['live_refresh_after_action'] = True
-    st.rerun()
+    # Removed st.rerun() to prevent immediate loop
 
 
 def trigger_live_open_application(app: str):
     """Open an application and refresh desktop."""
     api_client = st.session_state.api_client
     runner = st.session_state.async_runner
+    
+    # Disable auto-refresh when user takes manual action
+    st.session_state.live_desktop_auto_refresh = False
     
     # Launch application
     app_future = runner.run(api_client.post_computer("/computer-use", {
@@ -221,9 +262,9 @@ def trigger_live_open_application(app: str):
     }))
     st.session_state['live_app_future'] = (f"Launch {app}", app_future)
     
-    # Set flag to refresh after app launch
+    # Set flag to refresh after app launch (but don't rerun immediately)
     st.session_state['live_refresh_after_action'] = True
-    st.rerun()
+    # Removed st.rerun() to prevent immediate loop
 
 
 def handle_live_action_results():
