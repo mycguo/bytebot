@@ -168,8 +168,14 @@ class TaskProcessor:
             )
             return
         
-        max_iterations = 20  # Prevent infinite loops
+        max_iterations = 12  # Prevent infinite loops (reduced from 20)
         iteration = 0
+        
+        # Loop detection variables
+        screenshot_count = 0
+        max_consecutive_screenshots = 1  # Only allow 1 screenshot before forcing action
+        last_actions = []
+        max_action_history = 5
         
         while iteration < max_iterations:
             if abort_event.is_set():
@@ -180,7 +186,7 @@ class TaskProcessor:
             
             # Get model configuration from task
             model_config = task.model if hasattr(task, 'model') and task.model else {
-                "name": "claude-3-5-sonnet-20240620"
+                "name": "claude-sonnet-4-20250514"
             }
             
             try:
@@ -204,14 +210,53 @@ class TaskProcessor:
                 tool_results = []
                 has_computer_tools = False
                 task_completed = False
+                current_iteration_actions = []
                 
                 for block in response.content_blocks:
                     if isinstance(block, ToolUseContentBlock):
                         if is_computer_tool_use_content_block(block):
                             has_computer_tools = True
-                            # Execute computer tool
-                            result = await self._execute_computer_tool(block)
-                            tool_results.append(result)
+                            
+                            # Check if this is a blocked screenshot
+                            is_blocked_screenshot = False
+                            
+                            # Track screenshot usage for loop detection
+                            if block.name == "computer_screenshot":
+                                screenshot_count += 1
+                                if screenshot_count > max_consecutive_screenshots:
+                                    self.logger.warning(f"Task {task.id} taking too many consecutive screenshots ({screenshot_count}), adding guidance")
+                                    
+                                    # Create FORCED action guidance based on task description
+                                    guidance_text = "SCREENSHOT BLOCKED: Too many screenshots without action!\n\n"
+                                    if "gmail.com" in task.description.lower() or "browser" in task.description.lower():
+                                        guidance_text += "IMMEDIATE ACTION REQUIRED for browser task:\n1. Launch Firefox: computer_application with application='firefox'\n2. Wait 3 seconds for Firefox to load\n3. Click address bar at coordinates x=640, y=80: computer_click_mouse\n4. Type 'gmail.com': computer_type_text with text='gmail.com'\n5. Press Enter: computer_type_keys with keys=['Return']\n\nDO NOT take another screenshot. Take action NOW!"
+                                    else:
+                                        guidance_text += "You MUST take action instead of more screenshots:\n- computer_click_mouse: Click on elements\n- computer_type_text: Type text\n- computer_application: Launch apps\n- set_task_status: Complete task\n\nSTOP taking screenshots and ACT!"
+                                    
+                                    guidance_result = ToolResultContentBlock(
+                                        type=MessageContentType.TOOL_RESULT,
+                                        tool_use_id=block.id,
+                                        content=[
+                                            TextContentBlock(
+                                                type=MessageContentType.TEXT,
+                                                text=guidance_text
+                                            )
+                                        ]
+                                    )
+                                    tool_results.append(guidance_result)
+                                    is_blocked_screenshot = True
+                            else:
+                                screenshot_count = 0  # Reset if other tool used
+                            
+                            # Only execute the tool if it's not a blocked screenshot
+                            if not is_blocked_screenshot:
+                                # Track action for repetition detection
+                                action_key = f"{block.name}_{str(block.input)}"
+                                current_iteration_actions.append(action_key)
+                                
+                                # Execute computer tool
+                                result = await self._execute_computer_tool(block)
+                                tool_results.append(result)
                         elif is_set_task_status_tool_use_block(block):
                             # Handle task status change
                             await self._handle_task_status_change(task_service, task.id, block)
@@ -222,6 +267,29 @@ class TaskProcessor:
                 if task_completed:
                     return
                     
+                # Update action history for repetition detection
+                if current_iteration_actions:
+                    last_actions.extend(current_iteration_actions)
+                    if len(last_actions) > max_action_history:
+                        last_actions = last_actions[-max_action_history:]
+                    
+                    # Check for action repetition
+                    if len(set(last_actions)) <= 2 and len(last_actions) >= 4:
+                        self.logger.warning(f"Task {task.id} appears to be repeating actions")
+                        # Add guidance about task completion
+                        guidance_response = [
+                            TextContentBlock(
+                                type=MessageContentType.TEXT,
+                                text=f"ACTION LOOP DETECTED: You are repeating similar actions for task '{task.description}'. You must now take a different action:\n\n1. If Firefox is open and you need to navigate to gmail.com:\n   - Click the address bar\n   - Type or paste 'gmail.com'\n   - Press Enter\n\n2. If the task is complete, use set_task_status tool with status='completed'\n\n3. If you're stuck, use set_task_status with status='needs_help'\n\nSTOP repeating the same actions!"
+                            )
+                        ]
+                        await task_service.add_message(
+                            task_id=task.id,
+                            content=[block.model_dump() for block in guidance_response],
+                            role=Role.ASSISTANT
+                        )
+                        break
+                
                 # Add tool results if any
                 if tool_results:
                     for result in tool_results:
@@ -238,8 +306,13 @@ class TaskProcessor:
                     self.logger.info(f"Task {task.id} completed with text response")
                     break
                 
-                # Small delay between iterations
-                await asyncio.sleep(0.1)
+                # Rate limiting: add delay between iterations 
+                if iteration > 5:  # After 5 iterations, increase delay
+                    delay = min(1.0, 0.2 * (iteration - 5))  # Exponential backoff, max 1 second
+                    self.logger.debug(f"Task {task.id} iteration {iteration}: adding {delay}s delay")
+                    await asyncio.sleep(delay)
+                else:
+                    await asyncio.sleep(0.1)
                 
             except Exception as e:
                 self.logger.error(f"Error in AI processing for task {task.id}: {e}")
@@ -258,7 +331,27 @@ class TaskProcessor:
                 break
         
         if iteration >= max_iterations:
-            self.logger.warning(f"Task {task.id} reached maximum iterations ({max_iterations})")
+            self.logger.warning(f"Task {task.id} reached maximum iterations ({max_iterations}), likely stuck in loop")
+            
+            # Add final guidance message 
+            final_guidance = [
+                TextContentBlock(
+                    type=MessageContentType.TEXT,
+                    text="Task reached maximum iterations. This usually indicates the AI got stuck in a loop. The task has been automatically stopped."
+                )
+            ]
+            await task_service.add_message(
+                task_id=task.id,
+                content=[block.model_dump() for block in final_guidance],
+                role=Role.ASSISTANT
+            )
+            
+            # Mark task as failed due to loop
+            await task_service.update_task_status(
+                task.id,
+                TaskStatus.FAILED,
+                error=f"Task stopped after {max_iterations} iterations - likely stuck in loop"
+            )
 
     async def _execute_computer_tool(self, tool_block: ToolUseContentBlock) -> ToolResultContentBlock:
         """Execute a computer tool use block."""

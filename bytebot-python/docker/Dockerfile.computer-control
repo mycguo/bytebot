@@ -4,10 +4,10 @@ FROM ghcr.io/bytebot-ai/bytebot-desktop:edge
 # Set working directory
 WORKDIR /app
 
-# Add deadsnakes PPA and install Python 3.11 and scrot for screenshots
+# Add deadsnakes PPA and install Python 3.11, scrot for screenshots, and fluxbox window manager
 RUN add-apt-repository ppa:deadsnakes/ppa -y && \
     apt-get update && \
-    apt-get install -y python3.11 python3.11-venv python3.11-dev python3-pip scrot && \
+    apt-get install -y python3.11 python3.11-venv python3.11-dev python3-pip scrot fluxbox x11-apps && \
     rm -rf /var/lib/apt/lists/*
 
 # Make python3.11 default

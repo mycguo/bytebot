@@ -1,295 +1,129 @@
 """Task list component."""
 
 import streamlit as st
-import asyncio
-import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Any
 
 
 def render_task_list():
     """Render the task list interface."""
-    
-    # Auto-refresh setup
-    if st.session_state.get("auto_refresh", True):
-        # This would be replaced with streamlit-autorefresh in a full implementation
-        refresh_placeholder = st.empty()
-        with refresh_placeholder:
-            if st.button("🔄 Refresh", key="manual_refresh"):
-                st.rerun()
-    
-    # Filter controls
+    # Initialize session state for task actions
+    if "task_action_futures" not in st.session_state:
+        st.session_state.task_action_futures = {}
+    if "tasks" not in st.session_state:
+        st.session_state.tasks = []
+
+    # Filter and action controls
     col1, col2, col3 = st.columns(3)
-    
     with col1:
-        status_filter = st.selectbox(
-            "Filter by Status",
-            ["All", "PENDING", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"],
-            index=0
-        )
-    
+        status_filter = st.selectbox("Filter by Status", ["All", "PENDING", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"])
     with col2:
-        limit = st.selectbox(
-            "Show",
-            [10, 25, 50, 100],
-            index=1
-        )
-    
+        limit = st.selectbox("Show", [10, 25, 50, 100], index=1)
     with col3:
-        if st.button("🗑️ Clear All", help="Clear all tasks"):
-            clear_all_tasks_with_confirmation()
-    
-    # Load and display tasks
-    load_and_display_tasks(status_filter, limit)
+        if st.button("🔄 Refresh All", use_container_width=True):
+            trigger_load_tasks(status_filter, limit)
+
+    # Trigger initial load
+    if "load_tasks_future" not in st.session_state and not st.session_state.tasks:
+        trigger_load_tasks(status_filter, limit)
+
+    # Render tasks or loading state
+    render_task_loading_state()
 
 
-def load_and_display_tasks(status_filter: str, limit: int):
-    """Load tasks from API and display them."""
-    try:
-        api_client = st.session_state.api_client
-        
-        # Determine status parameter
-        status_param = None if status_filter == "All" else status_filter
-        
-        # Load tasks
-        with st.spinner("Loading tasks..."):
-            tasks = asyncio.run(api_client.get_tasks(limit=limit, status=status_param))
-        
-        if not tasks:
-            st.info("📭 No tasks found or unable to connect to AI Agent service.")
+def trigger_load_tasks(status_filter: str, limit: int):
+    """Triggers an asynchronous load of the task list."""
+    api_client = st.session_state.api_client
+    runner = st.session_state.async_runner
+    status = None if status_filter == "All" else status_filter
+    future = runner.run(api_client.get_tasks(limit=limit, status=status))
+    st.session_state.load_tasks_future = future
+    st.rerun()
+
+
+def render_task_loading_state():
+    """Renders the task list or a loading spinner based on the future."""
+    if 'load_tasks_future' in st.session_state:
+        future = st.session_state.load_tasks_future
+        if future.done():
+            try:
+                tasks = future.result()
+                st.session_state.tasks = tasks if tasks else []
+                if not st.session_state.tasks:
+                    st.info("📭 No tasks found.")
+            except Exception as e:
+                st.error(f"❌ Error loading tasks: {e}")
+                st.session_state.tasks = []
+            del st.session_state.load_tasks_future
+            st.rerun() # Rerun once more to display the loaded tasks
+        else:
+            st.spinner("Loading tasks...")
             return
-        
-        if len(tasks) == 0:
-            st.info("📭 No tasks found matching the current filter.")
-            return
-        
-        # Display tasks
-        st.write(f"📋 **{len(tasks)} tasks** (showing max {limit})")
-        
-        for task in tasks:
-            render_task_card(task)
-            
-    except Exception as e:
-        st.error(f"❌ Error loading tasks: {str(e)}")
+
+    st.write(f"📋 **{len(st.session_state.tasks)} tasks**")
+    for task in st.session_state.tasks:
+        render_task_card(task)
 
 
 def render_task_card(task: Dict[str, Any]):
-    """Render a single task card."""
+    """Render a single task card with action buttons or a spinner."""
     task_id = task.get("id", "unknown")
-    description = task.get("description", "No description")
-    status = task.get("status", "UNKNOWN")
-    priority = task.get("priority", "MEDIUM")
-    created_at = task.get("created_at", "")
     
-    # Status color mapping
-    status_colors = {
-        "PENDING": "🟡",
-        "RUNNING": "🔵", 
-        "COMPLETED": "🟢",
-        "FAILED": "🔴",
-        "CANCELLED": "⚫",
-        "NEEDS_HELP": "🟠"
-    }
-    
-    # Priority color mapping
-    priority_colors = {
-        "LOW": "🔹",
-        "MEDIUM": "🔸", 
-        "HIGH": "🔶",
-        "URGENT": "🔺"
-    }
-    
-    status_icon = status_colors.get(status, "⚪")
-    priority_icon = priority_colors.get(priority, "🔸")
-    
-    # Format created time
-    created_time = ""
-    if created_at:
-        try:
-            dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-            created_time = dt.strftime("%m/%d %H:%M")
-        except:
-            created_time = created_at[:16] if len(created_at) > 16 else created_at
-    
-    # Task card container
     with st.container():
-        st.markdown(f"""
-        <div class="task-card">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
-                <div style="flex: 1;">
-                    <h4 style="margin: 0; color: #1f2937;">{description[:100]}{'...' if len(description) > 100 else ''}</h4>
-                </div>
-                <div style="display: flex; gap: 0.5rem; align-items: center;">
-                    <span>{priority_icon} {priority}</span>
-                    <span>{status_icon} {status}</span>
-                </div>
-            </div>
-            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.875rem; color: #6b7280;">
-                <span>📅 {created_time}</span>
-                <span>🆔 {task_id[:8]}...</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Action buttons
-        col1, col2, col3, col4, col5 = st.columns(5)
-        
-        with col1:
-            if st.button("👁️ View", key=f"view_{task_id}"):
-                show_task_details(task)
-        
-        with col2:
-            if status == "PENDING" and st.button("▶️ Start", key=f"start_{task_id}"):
-                process_task(task_id)
-        
-        with col3:
-            if status == "RUNNING" and st.button("⏹️ Stop", key=f"stop_{task_id}"):
-                abort_task(task_id)
-        
-        with col4:
-            if st.button("🔄 Refresh", key=f"refresh_{task_id}"):
-                refresh_single_task(task_id)
-        
-        with col5:
-            if st.button("🗑️ Delete", key=f"delete_{task_id}"):
-                delete_single_task(task_id)
-        
+        # Display task info
+        description = task.get("description", "No description")
+        status = task.get("status", "UNKNOWN")
+        created_at = task.get("created_at", "")
+        dt = datetime.fromisoformat(created_at.replace('Z', '+00:00')) if created_at else None
+        st.markdown(f"**{description}**")
+        created_str = dt.strftime("%m/%d %H:%M") if dt else 'N/A'
+        st.caption(f"Status: {status} | Created: {created_str} | ID: {task_id[:8]}...")
+
+        # Check for an ongoing action for this specific task
+        if task_id in st.session_state.task_action_futures:
+            future = st.session_state.task_action_futures[task_id]["future"]
+            action_name = st.session_state.task_action_futures[task_id]["name"]
+            
+            if future.done():
+                try:
+                    future.result()
+                    st.success(f"✅ {action_name} successful!")
+                    trigger_load_tasks("All", 25) # Refresh list after action
+                except Exception as e:
+                    st.error(f"❌ {action_name} failed: {e}")
+                del st.session_state.task_action_futures[task_id]
+                st.rerun()
+            else:
+                st.spinner(f"{action_name} in progress...")
+        else:
+            render_task_actions(task)
         st.markdown("---")
 
 
-def show_task_details(task: Dict[str, Any]):
-    """Show detailed task information in a modal-like display."""
-    with st.expander(f"📋 Task Details: {task.get('id', 'Unknown')[:8]}...", expanded=True):
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write("**Description:**")
-            st.write(task.get("description", "No description"))
-            
-            st.write("**Status:**")
-            st.write(task.get("status", "Unknown"))
-            
-            st.write("**Priority:**")
-            st.write(task.get("priority", "Unknown"))
-        
-        with col2:
-            st.write("**Created:**")
-            st.write(task.get("created_at", "Unknown"))
-            
-            st.write("**Updated:**") 
-            st.write(task.get("updated_at", "Unknown"))
-            
-            st.write("**Type:**")
-            st.write(task.get("type", "Unknown"))
-        
-        # Full task JSON
-        if st.checkbox("Show raw data", key=f"raw_{task.get('id')}"):
-            st.json(task)
+def render_task_actions(task: Dict[str, Any]):
+    """Render action buttons for a task."""
+    task_id = task["id"]
+    status = task["status"]
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if status == "PENDING" and st.button("▶️ Start", key=f"start_{task_id}", use_container_width=True):
+            trigger_task_action("Start", task_id, "process_task")
+    with col2:
+        if status == "RUNNING" and st.button("⏹️ Stop", key=f"stop_{task_id}", use_container_width=True):
+            trigger_task_action("Stop", task_id, "abort_task")
+    with col3:
+        if st.button("🗑️ Delete", key=f"delete_{task_id}", use_container_width=True):
+            trigger_task_action("Delete", task_id, "delete_task")
 
 
-def process_task(task_id: str):
-    """Process a specific task."""
-    try:
-        with st.spinner("Starting task processing..."):
-            api_client = st.session_state.api_client
-            result = asyncio.run(api_client.process_task(task_id))
-            
-            if result:
-                st.success(f"✅ Task {task_id[:8]}... processing started!")
-                st.rerun()
-            else:
-                st.error("❌ Failed to start task processing")
-                
-    except Exception as e:
-        st.error(f"❌ Error processing task: {str(e)}")
-
-
-def abort_task(task_id: str):
-    """Abort a running task."""
-    try:
-        with st.spinner("Stopping task..."):
-            api_client = st.session_state.api_client
-            result = asyncio.run(api_client.abort_task(task_id))
-            
-            if result:
-                st.success(f"✅ Task {task_id[:8]}... stopped!")
-                st.rerun()
-            else:
-                st.error("❌ Failed to stop task")
-                
-    except Exception as e:
-        st.error(f"❌ Error stopping task: {str(e)}")
-
-
-def refresh_single_task(task_id: str):
-    """Refresh a single task."""
-    try:
-        with st.spinner("Refreshing task..."):
-            api_client = st.session_state.api_client
-            result = asyncio.run(api_client.get_task(task_id))
-            
-            if result:
-                show_task_details(result)
-            else:
-                st.error("❌ Failed to refresh task")
-                
-    except Exception as e:
-        st.error(f"❌ Error refreshing task: {str(e)}")
-
-
-def delete_single_task(task_id: str):
-    """Delete a single task."""
-    try:
-        with st.spinner("Deleting task..."):
-            api_client = st.session_state.api_client
-            result = asyncio.run(api_client.delete_task(task_id))
-            
-            if result:
-                st.success(f"✅ Task {task_id[:8]}... deleted!")
-                st.rerun()
-            else:
-                st.error("❌ Failed to delete task")
-                
-    except Exception as e:
-        st.error(f"❌ Error deleting task: {str(e)}")
-
-
-def clear_all_tasks_with_confirmation():
-    """Clear all tasks with confirmation dialog."""
-    try:
-        # Show confirmation dialog
-        if "confirm_clear_all" not in st.session_state:
-            st.session_state.confirm_clear_all = False
-        
-        if not st.session_state.confirm_clear_all:
-            with st.container():
-                st.warning("⚠️ Are you sure you want to delete ALL tasks? This action cannot be undone.")
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    if st.button("✅ Yes, Delete All", type="primary"):
-                        st.session_state.confirm_clear_all = True
-                        st.rerun()
-                
-                with col2:
-                    if st.button("❌ Cancel"):
-                        st.info("Clear all operation cancelled.")
-        else:
-            # Perform the deletion
-            with st.spinner("Deleting all tasks..."):
-                api_client = st.session_state.api_client
-                result = asyncio.run(api_client.clear_all_tasks())
-                
-                if result:
-                    message = result.get("message", "All tasks deleted")
-                    st.success(f"✅ {message}")
-                    st.session_state.confirm_clear_all = False
-                    st.rerun()
-                else:
-                    st.error("❌ Failed to delete all tasks")
-                    st.session_state.confirm_clear_all = False
-                
-    except Exception as e:
-        st.error(f"❌ Error clearing all tasks: {str(e)}")
-        st.session_state.confirm_clear_all = False
+def trigger_task_action(action_name: str, task_id: str, method_name: str):
+    """Triggers a generic, non-blocking action on a task."""
+    api_client = st.session_state.api_client
+    runner = st.session_state.async_runner
+    
+    method_to_call = getattr(api_client, method_name)
+    future = runner.run(method_to_call(task_id))
+    
+    st.session_state.task_action_futures[task_id] = {"name": action_name, "future": future}
+    st.rerun()
