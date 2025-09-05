@@ -17,12 +17,14 @@ from shared.types.message_content import (
     ToolResultContentBlock,
     is_computer_tool_use_content_block,
     is_set_task_status_tool_use_block,
+    is_create_task_tool_use_block,
 )
 
 from .task_service import TaskService
 from ..models.constants import AGENT_SYSTEM_PROMPT
 from ..models.agent_types import AgentInterrupt
 from ..providers.anthropic import AnthropicService
+from ..providers.openai_provider import OpenAIService
 
 
 class TaskProcessor:
@@ -37,13 +39,22 @@ class TaskProcessor:
         # Computer control service URL - use environment variable
         self.computer_control_url = os.getenv("COMPUTER_CONTROL_URL", "http://computer-control:9995")
         
-        # Initialize AI provider
+        # Initialize AI provider - use OpenAI first due to Anthropic credit issues  
+        self.ai_provider = None
         try:
-            self.ai_provider = AnthropicService()
-            self.logger.info("Anthropic AI provider initialized")
+            self.ai_provider = OpenAIService()
+            self.logger.info("OpenAI AI provider initialized")
         except Exception as e:
-            self.logger.warning(f"Failed to initialize AI provider: {e}")
-            self.ai_provider = None
+            self.logger.warning(f"Failed to initialize OpenAI provider: {e}")
+            
+        # If OpenAI fails, try Anthropic as fallback
+        if not self.ai_provider:
+            try:
+                self.ai_provider = AnthropicService()
+                self.logger.info("Anthropic AI provider initialized as fallback")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize Anthropic provider: {e}")
+                self.ai_provider = None
         
         self.logger.info("TaskProcessor initialized")
 
@@ -173,7 +184,11 @@ class TaskProcessor:
         
         # Loop detection variables
         screenshot_count = 0
-        max_consecutive_screenshots = 4  # Allow 4 screenshots like TypeScript (increased from 1)
+        # Increase screenshot tolerance for browser navigation tasks
+        if any(keyword in task.description.lower() for keyword in ["browser", "firefox", "chrome", "navigate", "go to", "gmail", "website", "url"]):
+            max_consecutive_screenshots = 8  # More lenient for browser tasks
+        else:
+            max_consecutive_screenshots = 4  # Standard for other tasks
         last_actions = []
         max_action_history = 5
         
@@ -189,15 +204,29 @@ class TaskProcessor:
                 "name": "claude-sonnet-4-20250514"
             }
             
+            # Use appropriate model based on provider
+            if isinstance(self.ai_provider, OpenAIService):
+                model_name = "gpt-4o"  # Use OpenAI's latest model
+            else:
+                model_name = model_config.get("name", "claude-3-5-sonnet-20240620")
+            
             try:
                 # Call real AI provider
                 response = await self.ai_provider.generate_message(
                     system_prompt=AGENT_SYSTEM_PROMPT,
                     messages=messages,
-                    model=model_config.get("name", "claude-3-5-sonnet-20240620"),
+                    model=model_name,
                     use_tools=True,
                     signal=abort_event
                 )
+                
+                # Log AI conversation for debugging
+                self.logger.info(f"Task {task.id} - Iteration {iteration}: AI Response with {len(response.content_blocks)} blocks")
+                for i, block in enumerate(response.content_blocks):
+                    if hasattr(block, 'text') and block.text:
+                        self.logger.info(f"Task {task.id} - Block {i}: TEXT: {block.text[:200]}...")
+                    elif hasattr(block, 'name') and block.name:
+                        self.logger.info(f"Task {task.id} - Block {i}: TOOL: {block.name} with input: {block.input}")
                 
                 # Add AI response message
                 await task_service.add_message(
@@ -226,10 +255,17 @@ class TaskProcessor:
                                 if screenshot_count > max_consecutive_screenshots:
                                     self.logger.warning(f"Task {task.id} taking many consecutive screenshots ({screenshot_count}), adding gentle guidance")
                                     
-                                    # Provide gentle guidance instead of blocking (like TypeScript behavior)
-                                    guidance_text = f"You have taken {screenshot_count} consecutive screenshots. Consider taking an action to progress the task:\n"
-                                    if "gmail.com" in task.description.lower() or "browser" in task.description.lower():
-                                        guidance_text += "For browser tasks:\n1. Launch Firefox if not open: computer_application with application='firefox'\n2. Click address bar: computer_click_mouse\n3. Type URL: computer_type_text\n4. Press Enter: computer_type_keys"
+                                    # Provide context-aware guidance instead of blocking (like TypeScript behavior)
+                                    guidance_text = f"You have taken {screenshot_count} consecutive screenshots. Continue with the next action to complete the full task:\n"
+                                    if any(keyword in task.description.lower() for keyword in ["firefox", "browser", "navigate", "go to", "gmail", "website", "url"]):
+                                        guidance_text += "For browser navigation tasks:\n"
+                                        guidance_text += "1. Launch Firefox: computer_application with application='firefox'\n"
+                                        guidance_text += "2. Wait 3-4 seconds for Firefox to load completely\n" 
+                                        guidance_text += "3. Click address bar (around x=640, y=80): computer_click_mouse\n"
+                                        guidance_text += "4. Type the URL (e.g., 'gmail.com'): computer_type_text\n"
+                                        guidance_text += "5. Press Enter: computer_type_keys with keys=['Return']\n"
+                                        guidance_text += "6. Wait for page to load, then verify you reached the destination\n"
+                                        guidance_text += "IMPORTANT: Complete ALL steps - don't stop after just launching Firefox!"
                                     else:
                                         guidance_text += "Available actions:\n- computer_click_mouse: Click on elements\n- computer_type_text: Type text\n- computer_application: Launch apps\n- set_task_status: Complete or report status"
                                     
@@ -255,8 +291,10 @@ class TaskProcessor:
                                 current_iteration_actions.append(action_key)
                                 
                                 # Execute computer tool
+                                self.logger.info(f"Task {task.id} - Executing tool: {block.name} with input: {block.input}")
                                 result = await self._execute_computer_tool(block)
                                 tool_results.append(result)
+                                self.logger.info(f"Task {task.id} - Tool result: {result.content[0].text if result.content else 'No content'}")
                                 
                                 # Auto-screenshot after non-screenshot actions like TypeScript
                                 if block.name != "computer_screenshot":
@@ -293,6 +331,9 @@ class TaskProcessor:
                                     except Exception as e:
                                         self.logger.debug(f"Auto-screenshot after {block.name} failed: {e}")
                                         # Don't fail the task if auto-screenshot fails
+                        elif is_create_task_tool_use_block(block):
+                            # Handle task creation
+                            await self._handle_create_task(task_service, block)
                         elif is_set_task_status_tool_use_block(block):
                             # Handle task status change
                             await self._handle_task_status_change(task_service, task.id, block)
@@ -309,14 +350,17 @@ class TaskProcessor:
                     if len(last_actions) > max_action_history:
                         last_actions = last_actions[-max_action_history:]
                     
-                    # Check for action repetition
-                    if len(set(last_actions)) <= 2 and len(last_actions) >= 4:
-                        self.logger.warning(f"Task {task.id} appears to be repeating actions")
-                        # Add guidance about task completion
+                    # Check for action repetition - but be more lenient for browser tasks
+                    is_browser_task = any(keyword in task.description.lower() for keyword in ["firefox", "browser", "chrome", "navigate", "gmail", "website", "url"])
+                    repetition_threshold = 6 if is_browser_task else 4  # More lenient for browser tasks
+                    
+                    if len(set(last_actions)) <= 2 and len(last_actions) >= repetition_threshold:
+                        self.logger.warning(f"Task {task.id} appears to be repeating actions: {last_actions}")
+                        # Add guidance about task completion but don't break - let it continue with guidance
                         guidance_response = [
                             TextContentBlock(
                                 type=MessageContentType.TEXT,
-                                text=f"ACTION LOOP DETECTED: You are repeating similar actions for task '{task.description}'. You must now take a different action:\n\n1. If Firefox is open and you need to navigate to gmail.com:\n   - Click the address bar\n   - Type or paste 'gmail.com'\n   - Press Enter\n\n2. If the task is complete, use set_task_status tool with status='completed'\n\n3. If you're stuck, use set_task_status with status='needs_help'\n\nSTOP repeating the same actions!"
+                                text=f"ACTION LOOP DETECTED: You are repeating similar actions for task '{task.description}'. Recent actions: {last_actions}\n\nYou must now take a DIFFERENT action:\n\n1. If Firefox is open and you need to navigate somewhere:\n   - Click the address bar (usually around coordinates 640, 80)\n   - Type the destination URL\n   - Press Enter to navigate\n\n2. If Firefox needs to be launched first:\n   - Use computer_application with application='firefox'\n   - Wait a few seconds for it to load\n   - Then proceed with navigation\n\n3. If the task is actually complete, use set_task_status tool with status='completed'\n\n4. If you're stuck, use set_task_status with status='needs_help'\n\nSTOP repeating the same actions! Take a DIFFERENT action now!"
                             )
                         ]
                         await task_service.add_message(
@@ -324,7 +368,11 @@ class TaskProcessor:
                             content=[block.model_dump() for block in guidance_response],
                             role=Role.ASSISTANT
                         )
-                        break
+                        # Clear action history to give it a fresh start instead of breaking
+                        last_actions = []
+                        # Add one more iteration chance after guidance
+                        if iteration >= max_iterations - 3:  # Give a few more chances after guidance
+                            max_iterations += 3
                 
                 # Add tool results if any
                 if tool_results:
@@ -391,7 +439,7 @@ class TaskProcessor:
 
     async def _execute_computer_tool(self, tool_block: ToolUseContentBlock) -> ToolResultContentBlock:
         """Execute a computer tool use block."""
-        self.logger.info(f"Executing computer tool: {tool_block.name}")
+        self.logger.info(f"Executing computer tool: {tool_block.name} with input: {tool_block.input}")
         
         try:
             # Prepare the computer action
@@ -479,3 +527,21 @@ class TaskProcessor:
             )
         
         self.logger.info(f"Task {task_id} status changed to {status}: {description}")
+
+    async def _handle_create_task(self, task_service: TaskService, tool_block: ToolUseContentBlock):
+        """Handle create task tool."""
+        task_input = tool_block.input
+        description = task_input.get("description")
+        priority = task_input.get("priority", "medium")
+        
+        if not description:
+            self.logger.error("Create task called without description")
+            return
+        
+        # Create new task
+        new_task = await task_service.create_task(
+            description=description,
+            priority=priority
+        )
+        
+        self.logger.info(f"Created new subtask {new_task.id}: {description} (priority: {priority})")
