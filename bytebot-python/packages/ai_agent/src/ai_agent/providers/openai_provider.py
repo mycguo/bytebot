@@ -93,21 +93,47 @@ class OpenAIService(BaseAIProvider):
             # Convert role
             role = "user" if msg.role.value == "USER" else "assistant"
             
-            # Convert content - for now, simple text extraction
-            content_text = ""
+            # Convert content - handle both text and images
+            content_parts = []
+            has_content = False
+            
             if isinstance(msg.content, list):
                 for block in msg.content:
-                    if isinstance(block, dict) and block.get("type") == "text":
-                        content_text += block.get("text", "")
+                    if isinstance(block, dict):
+                        if block.get("type") == "text" and block.get("text"):
+                            content_parts.append({
+                                "type": "text",
+                                "text": block.get("text")
+                            })
+                            has_content = True
+                        elif block.get("type") == "image" and block.get("source"):
+                            # Handle base64 images for vision
+                            source = block.get("source", {})
+                            if source.get("type") == "base64" and source.get("data"):
+                                media_type = source.get("media_type", "image/png")
+                                content_parts.append({
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:{media_type};base64,{source.get('data')}"
+                                    }
+                                })
+                                has_content = True
             
-            # Strip whitespace to avoid API errors
-            content_text = content_text.strip()
-            
-            if content_text:
-                openai_messages.append({
-                    "role": role,
-                    "content": content_text
-                })
+            # If we have content parts (text + images), use the multi-part format
+            # If only text, use simple string format for compatibility
+            if has_content:
+                if len(content_parts) == 1 and content_parts[0]["type"] == "text":
+                    # Simple text-only message
+                    openai_messages.append({
+                        "role": role,
+                        "content": content_parts[0]["text"]
+                    })
+                else:
+                    # Multi-part message with images
+                    openai_messages.append({
+                        "role": role,
+                        "content": content_parts
+                    })
         
         return openai_messages
 
