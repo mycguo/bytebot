@@ -6,6 +6,7 @@ import asyncio
 import atexit
 import weakref
 import time
+import threading
 from threading import Thread, Lock
 from concurrent.futures import Future, TimeoutError
 from typing import Coroutine, Callable, Optional, Dict, Any

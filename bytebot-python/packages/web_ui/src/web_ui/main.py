@@ -321,17 +321,34 @@ def render_main_task_card(task):
         created_str = dt.strftime("%m/%d %H:%M") if dt else 'N/A'
         st.caption(f"Status: {status} | Created: {created_str} | ID: {task_id[:8]}...")
 
-        # Simple action buttons
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            if status == "PENDING" and st.button("▶️ Start", key=f"main_start_{task_id}", use_container_width=True):
-                trigger_main_task_action("Start", task_id, "process_task")
-        with col2:
-            if status == "RUNNING" and st.button("⏹️ Stop", key=f"main_stop_{task_id}", use_container_width=True):
-                trigger_main_task_action("Stop", task_id, "abort_task")
-        with col3:
-            if st.button("🗑️ Delete", key=f"main_delete_{task_id}", use_container_width=True):
-                trigger_main_task_action("Delete", task_id, "delete_task")
+        # Check for ongoing action for this specific task
+        if "main_task_action_futures" in st.session_state and task_id in st.session_state.main_task_action_futures:
+            future = st.session_state.main_task_action_futures[task_id]["future"]
+            action_name = st.session_state.main_task_action_futures[task_id]["name"]
+            
+            if future.done():
+                try:
+                    future.result()
+                    st.success(f"✅ {action_name} successful!")
+                    trigger_load_tasks_main("All", 25) # Refresh list after action
+                except Exception as e:
+                    st.error(f"❌ {action_name} failed: {e}")
+                del st.session_state.main_task_action_futures[task_id]
+                st.rerun()
+            else:
+                st.spinner(f"{action_name} in progress...")
+        else:
+            # Simple action buttons
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if status == "PENDING" and st.button("▶️ Start", key=f"main_start_{task_id}", use_container_width=True):
+                    trigger_main_task_action("Start", task_id, "process_task")
+            with col2:
+                if status == "RUNNING" and st.button("⏹️ Stop", key=f"main_stop_{task_id}", use_container_width=True):
+                    trigger_main_task_action("Stop", task_id, "abort_task")
+            with col3:
+                if st.button("🗑️ Delete", key=f"main_delete_{task_id}", use_container_width=True):
+                    trigger_main_task_action("Delete", task_id, "delete_task")
         
         st.markdown("---")
 
