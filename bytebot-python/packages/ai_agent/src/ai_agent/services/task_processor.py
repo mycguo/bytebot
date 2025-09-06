@@ -201,18 +201,39 @@ class TaskProcessor:
             
             # Get model configuration from task
             model_config = task.model if hasattr(task, 'model') and task.model else {
-                "name": "claude-sonnet-4-20250514"
+                "provider": "anthropic",
+                "name": "claude-opus-4-1-20250805"  # Use Claude Opus 4.1 for better vision processing
             }
             
-            # Use appropriate model based on provider
-            if isinstance(self.ai_provider, OpenAIService):
-                model_name = "gpt-4o"  # Use OpenAI's latest model
-            else:
-                model_name = model_config.get("name", "claude-3-5-sonnet-20240620")
+            # Select AI provider based on task model configuration
+            requested_provider = model_config.get("provider", "anthropic")
+            ai_provider = None
+            
+            if requested_provider == "anthropic":
+                try:
+                    ai_provider = AnthropicService()
+                    model_name = model_config.get("name", "claude-opus-4-1-20250805")
+                except Exception as e:
+                    self.logger.warning(f"Failed to initialize Anthropic provider: {e}, falling back to OpenAI")
+                    
+            if not ai_provider and requested_provider == "openai":
+                try:
+                    ai_provider = OpenAIService()
+                    model_name = "gpt-4o"  # Use OpenAI's latest vision model
+                except Exception as e:
+                    self.logger.warning(f"Failed to initialize OpenAI provider: {e}")
+                    
+            # Final fallback - use whatever provider was initialized
+            if not ai_provider:
+                ai_provider = self.ai_provider
+                if isinstance(ai_provider, OpenAIService):
+                    model_name = "gpt-4o"
+                else:
+                    model_name = model_config.get("name", "claude-opus-4-1-20250805")
             
             try:
                 # Call real AI provider
-                response = await self.ai_provider.generate_message(
+                response = await ai_provider.generate_message(
                     system_prompt=AGENT_SYSTEM_PROMPT,
                     messages=messages,
                     model=model_name,
@@ -380,7 +401,7 @@ class TaskProcessor:
                         await task_service.add_message(
                             task_id=task.id,
                             content=[result.model_dump()],
-                            role=Role.ASSISTANT
+                            role=Role.USER  # Tool results must be USER messages for Anthropic API
                         )
                     
                     # Refresh messages for next iteration

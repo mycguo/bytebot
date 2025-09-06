@@ -90,20 +90,79 @@ class AnthropicService(BaseAIProvider):
             # Convert role
             role = "user" if msg.role.value == "USER" else "assistant"
             
-            # Convert content - for now, simple text extraction
-            content_text = ""
+            # Convert content - handle both text and images
+            content_parts = []
+            has_content = False
+            
             if isinstance(msg.content, list):
                 for block in msg.content:
-                    if isinstance(block, dict) and block.get("type") == "text":
-                        content_text += block.get("text", "")
+                    if isinstance(block, dict):
+                        if block.get("type") == "text" and block.get("text"):
+                            content_parts.append({
+                                "type": "text",
+                                "text": block.get("text")
+                            })
+                            has_content = True
+                        elif block.get("type") == "image" and block.get("source"):
+                            # Handle base64 images for vision
+                            source = block.get("source", {})
+                            if source.get("type") == "base64" and source.get("data"):
+                                media_type = source.get("media_type", "image/png")
+                                content_parts.append({
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": media_type,
+                                        "data": source.get("data")
+                                    }
+                                })
+                                has_content = True
+                        elif block.get("type") == "tool_use" and block.get("name"):
+                            # Handle tool use blocks
+                            content_parts.append({
+                                "type": "tool_use",
+                                "id": block.get("id"),
+                                "name": block.get("name"),
+                                "input": block.get("input", {})
+                            })
+                            has_content = True
+                        elif block.get("type") == "tool_result" and block.get("tool_use_id"):
+                            # Handle tool result blocks
+                            tool_result_content = []
+                            if block.get("content"):
+                                for result_block in block.get("content", []):
+                                    if isinstance(result_block, dict):
+                                        if result_block.get("type") == "text":
+                                            tool_result_content.append({
+                                                "type": "text",
+                                                "text": result_block.get("text", "")
+                                            })
+                                        elif result_block.get("type") == "image" and result_block.get("source"):
+                                            # Handle images in tool results
+                                            result_source = result_block.get("source", {})
+                                            if result_source.get("type") == "base64" and result_source.get("data"):
+                                                result_media_type = result_source.get("media_type", "image/png")
+                                                tool_result_content.append({
+                                                    "type": "image",
+                                                    "source": {
+                                                        "type": "base64",
+                                                        "media_type": result_media_type,
+                                                        "data": result_source.get("data")
+                                                    }
+                                                })
+                            
+                            content_parts.append({
+                                "type": "tool_result",
+                                "tool_use_id": block.get("tool_use_id"),
+                                "content": tool_result_content
+                            })
+                            has_content = True
             
-            # Strip whitespace to avoid Anthropic API errors
-            content_text = content_text.strip()
-            
-            if content_text:
+            # Add message if it has content
+            if has_content:
                 anthropic_messages.append({
                     "role": role,
-                    "content": content_text
+                    "content": content_parts
                 })
         
         return anthropic_messages
@@ -462,6 +521,26 @@ class AnthropicService(BaseAIProvider):
                 }
             },
             {
+                "name": "create_task",
+                "description": "Create a new subtask to break down complex work",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "description": {
+                            "type": "string",
+                            "description": "Description of the subtask to create"
+                        },
+                        "priority": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high"],
+                            "default": "medium",
+                            "description": "Priority level for the subtask"
+                        }
+                    },
+                    "required": ["description"]
+                }
+            },
+            {
                 "name": "set_task_status",
                 "description": "Set the current task status (completed, failed, or needs help)",
                 "input_schema": {
@@ -485,6 +564,7 @@ class AnthropicService(BaseAIProvider):
     def get_available_models(self) -> List[str]:
         """Get available Anthropic models."""
         return [
+            "claude-opus-4-1-20250805",  # Claude Opus 4.1 - best for vision processing
             "claude-sonnet-4-20250514",
             "claude-3-5-sonnet-20240620",
             "claude-3-5-haiku-20241022", 
