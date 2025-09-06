@@ -96,23 +96,37 @@ def main():
 
 def render_combined_page():
     """Render the combined tasks and desktop page."""
-    # Create columns with 1/3 for tasks and 2/3 for desktop
-    col1, col2 = st.columns([1, 2])
+    # Task Creator in expander
+    with st.expander("➕ Create New Task", expanded=True):
+        render_task_creator()
     
+    # Add desktop viewer first
+    st.markdown("---")
+    render_desktop_viewer_section_main()
+    
+    # Add spacing before Tasks & Desktop section
+    st.markdown("---")
+    
+    # Tasks & Desktop section moved below Virtual Desktop
+    st.markdown("### 📋 Tasks & Desktop")
+    
+    # Filter and action controls
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.subheader("📝 Tasks")
-        
-        # Task Creator
-        with st.expander("➕ Create New Task", expanded=True):
-            render_task_creator()
-        
-        # Task List
-        st.markdown("### 📋 Task List")
-        render_task_list()
-    
+        status_filter = st.selectbox("Filter by Status", ["All", "PENDING", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"], key="main_status_filter")
     with col2:
-        st.subheader("🖥️ Virtual Desktop")
-        render_desktop_viewer()
+        limit = st.selectbox("Show", [10, 25, 50, 100], index=1, key="main_limit")
+    with col3:
+        if st.button("🔄 Refresh All", use_container_width=True, key="main_refresh"):
+            trigger_load_tasks_main(status_filter, limit)
+
+    # Trigger initial load
+    if "main_load_tasks_future" not in st.session_state and "main_tasks" not in st.session_state:
+        st.session_state.main_tasks = []
+        trigger_load_tasks_main(status_filter, limit)
+
+    # Render tasks or loading state
+    render_main_task_loading_state()
 
 
 def render_tasks_page():
@@ -252,6 +266,105 @@ def render_service_status():
                 st.spinner("Checking...")
         else:
             st.write("Click button to check status.")
+
+
+def trigger_load_tasks_main(status_filter: str, limit: int):
+    """Triggers an asynchronous load of the task list for main page."""
+    api_client = st.session_state.api_client
+    runner = st.session_state.async_runner
+    status = None if status_filter == "All" else status_filter
+    future = runner.run(api_client.get_tasks(limit=limit, status=status))
+    st.session_state.main_load_tasks_future = future
+    st.rerun()
+
+
+def render_main_task_loading_state():
+    """Renders the task list or a loading spinner for main page."""
+    if 'main_load_tasks_future' in st.session_state:
+        future = st.session_state.main_load_tasks_future
+        if future.done():
+            try:
+                tasks = future.result()
+                st.session_state.main_tasks = tasks if tasks else []
+                if not st.session_state.main_tasks:
+                    st.info("📭 No tasks found.")
+            except Exception as e:
+                st.error(f"❌ Error loading tasks: {e}")
+                st.session_state.main_tasks = []
+            del st.session_state.main_load_tasks_future
+            st.rerun()
+        else:
+            st.spinner("Loading tasks...")
+            return
+
+    if "main_tasks" not in st.session_state:
+        st.session_state.main_tasks = []
+
+    st.write(f"📋 **{len(st.session_state.main_tasks)} tasks**")
+    for task in st.session_state.main_tasks:
+        render_main_task_card(task)
+
+
+def render_main_task_card(task):
+    """Render a single task card for main page."""
+    from datetime import datetime
+    
+    task_id = task.get("id", "unknown")
+    
+    with st.container():
+        # Display task info
+        description = task.get("description", "No description")
+        status = task.get("status", "UNKNOWN")
+        created_at = task.get("created_at", "")
+        dt = datetime.fromisoformat(created_at.replace('Z', '+00:00')) if created_at else None
+        st.markdown(f"**{description}**")
+        created_str = dt.strftime("%m/%d %H:%M") if dt else 'N/A'
+        st.caption(f"Status: {status} | Created: {created_str} | ID: {task_id[:8]}...")
+
+        # Simple action buttons
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if status == "PENDING" and st.button("▶️ Start", key=f"main_start_{task_id}", use_container_width=True):
+                trigger_main_task_action("Start", task_id, "process_task")
+        with col2:
+            if status == "RUNNING" and st.button("⏹️ Stop", key=f"main_stop_{task_id}", use_container_width=True):
+                trigger_main_task_action("Stop", task_id, "abort_task")
+        with col3:
+            if st.button("🗑️ Delete", key=f"main_delete_{task_id}", use_container_width=True):
+                trigger_main_task_action("Delete", task_id, "delete_task")
+        
+        st.markdown("---")
+
+
+def trigger_main_task_action(action_name: str, task_id: str, method_name: str):
+    """Triggers a task action for main page."""
+    api_client = st.session_state.api_client
+    runner = st.session_state.async_runner
+    
+    method_to_call = getattr(api_client, method_name)
+    future = runner.run(method_to_call(task_id))
+    
+    # Use separate state for main page actions
+    if "main_task_action_futures" not in st.session_state:
+        st.session_state.main_task_action_futures = {}
+    
+    st.session_state.main_task_action_futures[task_id] = {"name": action_name, "future": future}
+    st.rerun()
+
+
+def render_desktop_viewer_section_main():
+    """Render desktop viewer section for main page."""
+    from web_ui.components.desktop_viewer import trigger_screenshot, render_screenshot_result, display_desktop_screenshot
+    
+    st.markdown("### 🖥️ Virtual Desktop")
+    
+    # Simple screenshot button
+    if st.button("📷 Take Screenshot", use_container_width=True, key="main_desktop_screenshot"):
+        trigger_screenshot()
+    
+    # Handle screenshot results and display
+    render_screenshot_result()
+    display_desktop_screenshot()
 
 
 if __name__ == "__main__":

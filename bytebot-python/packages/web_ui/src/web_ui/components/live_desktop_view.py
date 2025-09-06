@@ -1,45 +1,42 @@
-"""Live Desktop View component - similar to TypeScript implementation."""
+"""Live Desktop View component with Take Over functionality."""
 
 import streamlit as st
 import base64
 from PIL import Image
 import io
 import logging
+import uuid
+from datetime import datetime
+
+from ..services.input_capture_service import input_capture_service
 
 logger = logging.getLogger(__name__)
 
 def render_live_desktop_view():
-    """Render the live desktop view interface - showing desktop in full width."""
-    # Auto-refresh toggle
-    col1, col2, col3 = st.columns([1, 1, 2])
+    """Render the live desktop view interface with Take Over functionality."""
+    # Initialize session state
+    if "take_over_mode" not in st.session_state:
+        st.session_state.take_over_mode = False
+    if "input_capture_active" not in st.session_state:
+        st.session_state.input_capture_active = False
+    if "current_task_id" not in st.session_state:
+        st.session_state.current_task_id = None
+    if "tasks" not in st.session_state:
+        st.session_state.tasks = []
     
-    with col1:
-        auto_refresh = st.checkbox(
-            "🔄 Auto Refresh", 
-            value=st.session_state.get("live_desktop_auto_refresh", False),
-            help="Automatically refresh the desktop view every few seconds"
-        )
-        st.session_state.live_desktop_auto_refresh = auto_refresh
+    # Control Mode Toggle
+    render_control_mode_toggle()
     
-    with col2:
-        if st.button("📷 Refresh Now", use_container_width=True):
-            # Disable auto-refresh when user manually refreshes
-            st.session_state.live_desktop_auto_refresh = False
-            trigger_live_screenshot()
-    
-    with col3:
-        refresh_interval = st.slider(
-            "Refresh Interval (seconds)",
-            min_value=1,
-            max_value=10,
-            value=st.session_state.get("live_refresh_interval", 3),
-            help="How often to auto-refresh the desktop"
-        )
-        st.session_state.live_refresh_interval = refresh_interval
+    # Control settings based on mode
+    if st.session_state.take_over_mode:
+        render_take_over_mode_settings()
+    else:
+        render_standard_live_view_settings()
     
     st.markdown("---")
     
     # Handle auto-refresh (but not when manual actions are pending)
+    auto_refresh = st.session_state.get("live_desktop_auto_refresh", False)
     if auto_refresh:
         # Don't auto-refresh if we have pending actions to avoid interference
         has_pending_actions = (
@@ -225,6 +222,20 @@ def trigger_live_click_and_refresh(x: int, y: int, button: str):
     click_future = runner.run(api_client.click_mouse(x, y, button))
     st.session_state['live_click_future'] = (f"Click at ({x}, {y})", click_future)
     
+    # Record as user action if in Take Over mode and input capture is active
+    if (st.session_state.get('take_over_mode', False) and 
+        st.session_state.get('input_capture_active', False) and 
+        st.session_state.get('current_task_id')):
+        
+        # Get current screenshot for context
+        screenshot_data = None
+        if "live_current_screenshot" in st.session_state:
+            screenshot_data = st.session_state.live_current_screenshot.get("data") or st.session_state.live_current_screenshot.get("image")
+        
+        input_capture_service.capture_click_action(
+            x=x, y=y, button=button, click_count=1, screenshot_data=screenshot_data
+        )
+    
     # Set flag to refresh after click (but don't rerun immediately)
     st.session_state['live_refresh_after_action'] = True
     # Removed st.rerun() to prevent immediate loop
@@ -241,6 +252,20 @@ def trigger_live_type_and_refresh(text: str):
     # First type
     type_future = runner.run(api_client.type_text(text))
     st.session_state['live_type_future'] = (f"Type: {text[:20]}...", type_future)
+    
+    # Record as user action if in Take Over mode and input capture is active
+    if (st.session_state.get('take_over_mode', False) and 
+        st.session_state.get('input_capture_active', False) and 
+        st.session_state.get('current_task_id')):
+        
+        # Get current screenshot for context
+        screenshot_data = None
+        if "live_current_screenshot" in st.session_state:
+            screenshot_data = st.session_state.live_current_screenshot.get("data") or st.session_state.live_current_screenshot.get("image")
+        
+        input_capture_service.capture_type_text_action(
+            text=text, screenshot_data=screenshot_data
+        )
     
     # Set flag to refresh after typing (but don't rerun immediately)
     st.session_state['live_refresh_after_action'] = True
@@ -313,3 +338,224 @@ def handle_live_action_results():
             except Exception as e:
                 st.error(f"❌ Error: {action_name} - {e}")
             del st.session_state['live_app_future']
+
+
+def render_control_mode_toggle():
+    """Render the control mode toggle."""
+    st.markdown("### 🎮 Control Mode")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🖥️ Live View Mode", 
+                    disabled=not st.session_state.take_over_mode,
+                    use_container_width=True):
+            st.session_state.take_over_mode = False
+            st.session_state.input_capture_active = False
+            if input_capture_service.is_capturing():
+                input_capture_service.stop_capture()
+            st.rerun()
+    
+    with col2:
+        if st.button("🎮 Take Over Mode", 
+                    disabled=st.session_state.take_over_mode,
+                    use_container_width=True):
+            st.session_state.take_over_mode = True
+            st.rerun()
+
+
+def render_standard_live_view_settings():
+    """Render standard live view settings."""
+    st.markdown("#### 🖥️ Standard Live View")
+    
+    col1, col2, col3 = st.columns([1, 1, 2])
+    
+    with col1:
+        auto_refresh = st.checkbox(
+            "🔄 Auto Refresh", 
+            value=st.session_state.get("live_desktop_auto_refresh", False),
+            help="Automatically refresh the desktop view every few seconds"
+        )
+        st.session_state.live_desktop_auto_refresh = auto_refresh
+    
+    with col2:
+        if st.button("📷 Refresh Now", use_container_width=True):
+            # Disable auto-refresh when user manually refreshes
+            st.session_state.live_desktop_auto_refresh = False
+            trigger_live_screenshot()
+    
+    with col3:
+        refresh_interval = st.slider(
+            "Refresh Interval (seconds)",
+            min_value=1,
+            max_value=10,
+            value=st.session_state.get("live_refresh_interval", 3),
+            help="How often to auto-refresh the desktop"
+        )
+        st.session_state.live_refresh_interval = refresh_interval
+
+
+def render_take_over_mode_settings():
+    """Render Take Over mode settings."""
+    st.markdown("#### 🎮 Take Over Mode")
+    
+    # Task selection
+    render_task_selection_for_takeover()
+    
+    # Input capture controls
+    render_input_capture_controls_in_live_view()
+    
+    # Manual refresh in take over mode
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📷 Take Screenshot", use_container_width=True):
+            trigger_live_screenshot()
+    with col2:
+        if st.button("🔄 Refresh View", use_container_width=True):
+            st.rerun()
+
+
+def render_task_selection_for_takeover():
+    """Render task selection for Take Over mode in live view."""
+    if not st.session_state.tasks:
+        # Try to load tasks
+        if hasattr(st.session_state, 'api_client'):
+            try:
+                api_client = st.session_state.api_client
+                runner = st.session_state.async_runner
+                # This would need to be async, but for now just show info
+                st.info("🔍 Load tasks from the Tasks & Desktop section first to enable Take Over mode.")
+                return
+            except:
+                pass
+    
+    running_tasks = [task for task in st.session_state.tasks if task.get("status") == "RUNNING"]
+    
+    if not running_tasks:
+        st.info("🔍 No running tasks found. Start a task first to take over.")
+        return
+    
+    st.markdown("##### Select Running Task to Take Over")
+    
+    task_options = {f"{task['description'][:50]}... (ID: {task['id'][:8]})": task['id'] 
+                   for task in running_tasks}
+    
+    selected_task_key = st.selectbox(
+        "Choose a running task:",
+        list(task_options.keys()),
+        key="live_task_selector"
+    )
+    
+    if selected_task_key:
+        selected_task_id = task_options[selected_task_key]
+        st.session_state.current_task_id = selected_task_id
+        st.success(f"✅ Selected task: {selected_task_id[:8]}...")
+
+
+def render_input_capture_controls_in_live_view():
+    """Render input capture controls in live view."""
+    if not st.session_state.current_task_id:
+        return
+    
+    st.markdown("##### 📹 Input Capture")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("🔴 Start Capture" if not st.session_state.input_capture_active else "⏹️ Stop Capture",
+                    use_container_width=True):
+            st.session_state.input_capture_active = not st.session_state.input_capture_active
+            if st.session_state.input_capture_active:
+                start_input_capture_live()
+            else:
+                stop_input_capture_live()
+            st.rerun()
+    
+    with col2:
+        if st.session_state.input_capture_active:
+            st.success("🟢 Capturing input...")
+        else:
+            st.info("⚪ Input capture stopped")
+    
+    if st.session_state.input_capture_active:
+        st.info("💡 **Tip**: Your actions will be captured and can be sent to the AI agent.")
+    
+    # Display captured actions summary
+    if input_capture_service.is_capturing() or input_capture_service.get_captured_actions():
+        render_captured_actions_summary_live()
+
+
+def start_input_capture_live():
+    """Start input capture in live view."""
+    if not st.session_state.current_task_id:
+        return
+    
+    try:
+        success = input_capture_service.start_capture(st.session_state.current_task_id)
+        if success:
+            logger.info(f"Started input capture for task {st.session_state.current_task_id}")
+            st.success("🔴 Input capture started")
+        else:
+            st.error("❌ Failed to start input capture")
+            st.session_state.input_capture_active = False
+    except Exception as e:
+        st.error(f"❌ Failed to start input capture: {e}")
+        st.session_state.input_capture_active = False
+
+
+def stop_input_capture_live():
+    """Stop input capture in live view."""
+    try:
+        success = input_capture_service.stop_capture()
+        if success:
+            logger.info("Stopped input capture")
+            st.success("⏹️ Input capture stopped")
+        else:
+            st.warning("⚠️ Input capture was not active")
+    except Exception as e:
+        st.error(f"❌ Failed to stop input capture: {e}")
+
+
+def render_captured_actions_summary_live():
+    """Render captured actions summary in live view."""
+    captured_actions = input_capture_service.get_captured_actions()
+    
+    if not captured_actions:
+        return
+    
+    st.markdown("##### 📝 Captured Actions")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Actions", len(captured_actions))
+    with col2:
+        if st.button("🗑️ Clear", use_container_width=True):
+            input_capture_service.clear_captured_actions()
+            st.rerun()
+    with col3:
+        if st.button("🚀 Send to AI", use_container_width=True, type="primary"):
+            send_captured_actions_live()
+    
+    # Show recent actions
+    if st.expander(f"View {len(captured_actions)} actions", expanded=False):
+        for action in reversed(captured_actions[-5:]):  # Show last 5
+            timestamp = datetime.fromisoformat(action["timestamp"])
+            action_type = action["action_type"].replace("_", " ").title()
+            st.text(f"{timestamp.strftime('%H:%M:%S')} - {action_type}")
+
+
+def send_captured_actions_live():
+    """Send captured actions from live view."""
+    try:
+        api_client = st.session_state.api_client
+        success = input_capture_service.send_captured_actions_to_task(api_client)
+        
+        if success:
+            st.success("✅ Actions sent to AI agent!")
+            input_capture_service.clear_captured_actions()
+        else:
+            st.error("❌ Failed to send actions to AI")
+            
+    except Exception as e:
+        st.error(f"❌ Error sending actions: {e}")
+    
+    st.rerun()
