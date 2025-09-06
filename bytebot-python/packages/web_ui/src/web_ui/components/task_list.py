@@ -1,18 +1,29 @@
-"""Task list component."""
+"""Task list and desktop control component."""
 
 import streamlit as st
 from datetime import datetime
 from typing import List, Dict, Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def render_task_list():
     """Render the task list interface."""
-    # Initialize session state for task actions
+    # Initialize session state
     if "task_action_futures" not in st.session_state:
         st.session_state.task_action_futures = {}
     if "tasks" not in st.session_state:
         st.session_state.tasks = []
 
+    # Standard task interface (Take Over moved to Live Desktop View)
+    render_standard_task_interface()
+
+
+def render_standard_task_interface():
+    """Render the standard task management interface."""
+    st.markdown("### 📋 Tasks & Desktop")
+    
     # Filter and action controls
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -29,6 +40,16 @@ def render_task_list():
 
     # Render tasks or loading state
     render_task_loading_state()
+
+
+def render_desktop_viewer_section():
+    """Render desktop viewer section in Tasks & Desktop."""
+    from .desktop_viewer import render_desktop_viewer
+    
+    st.markdown("### 🖥️ Desktop Control")
+    st.info("💡 **Tip**: For Take Over functionality with input capture, use the **Live Desktop View** section.")
+    
+    render_desktop_viewer()
 
 
 def trigger_load_tasks(status_filter: str, limit: int):

@@ -25,6 +25,7 @@ def render_task_creator():
         with col2:
             model_options = {
                 "anthropic": [
+                    ("claude-opus-4-1-20250805", "Claude Opus 4.1"),
                     ("claude-sonnet-4-20250514", "Claude 4 Sonnet"),
                     ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet (Invalid)"),
                 ],

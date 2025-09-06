@@ -10,25 +10,25 @@ logger = logging.getLogger(__name__)
 
 def render_desktop_viewer():
     """Render the desktop viewer interface."""
-    col1, col2 = st.columns([3, 1])
+    st.subheader("🖥️ Virtual Desktop")
     
-    with col2:
-        render_controls()
+    # Simple screenshot button
+    if st.button("📷 Take Screenshot", use_container_width=True, key="simple_desktop_screenshot"):
+        trigger_screenshot()
     
-    with col1:
-        st.subheader("🖥️ Virtual Desktop")
-        render_screenshot_result() # Handles showing spinner or result
-        display_desktop_screenshot() # Displays the actual image if available
+    # Handle screenshot results and display
+    render_screenshot_result() # Handles showing spinner or result
+    display_desktop_screenshot() # Displays the actual image if available
 
 
 def render_controls():
     """Render the control panel for the desktop viewer."""
     st.subheader("🎮 Controls")
     
-    if st.button("📷 Take Screenshot", use_container_width=True):
+    if st.button("📷 Take Screenshot", use_container_width=True, key="desktop_screenshot"):
         trigger_screenshot()
     
-    if st.button("🔄 Refresh View", use_container_width=True):
+    if st.button("🔄 Refresh View", use_container_width=True, key="desktop_refresh"):
         st.rerun()
     
     st.markdown("---")
@@ -40,14 +40,14 @@ def render_controls():
     with col_y:
         click_y = st.number_input("Y", 0, 1080, 480)
     button_type = st.selectbox("Button", ["left", "right", "middle"])
-    if st.button("🖱️ Click", use_container_width=True):
+    if st.button("🖱️ Click", use_container_width=True, key="desktop_click"):
         trigger_click_mouse(click_x, click_y, button_type)
     
     st.markdown("---")
     
     st.subheader("⌨️ Keyboard Control")
     text_input = st.text_input("Text to type:")
-    if st.button("⌨️ Type Text", use_container_width=True) and text_input:
+    if st.button("⌨️ Type Text", use_container_width=True, key="desktop_type") and text_input:
         trigger_type_text(text_input)
 
     render_control_action_results()
